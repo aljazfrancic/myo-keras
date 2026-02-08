@@ -8,7 +8,7 @@ Trains a dense neural network to classify 8 hand gestures from 8-channel EMG sig
 
 ## Dataset
 
-Expects the [myo-readings-dataset](../myo-readings-dataset/) to be located alongside this repo. Specifically, readings are loaded from `_readings_right_hand/` and curated session names from `curated.txt`.
+Expects the [myo-readings-dataset](https://github.com/aljazfrancic/myo-readings-dataset) to be located alongside this repo. Specifically, readings are loaded from `_readings_right_hand/` and curated session names from `curated.txt`.
 
 ## Setup
 
