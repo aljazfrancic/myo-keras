@@ -14,6 +14,8 @@ LEARNING_RATE = 0.001
 EPOCHS = 20
 PATIENCE = 5
 LAYER_SIZES = [200, 100, 70]
+GROKKING_EPOCHS = 1000
+CURATION_ACCURACY_THRESHOLD = 0.7
 FIGURE_SIZE = (20, 5)
 GESTURE_LABELS = [
     "hibernation",
@@ -60,17 +62,17 @@ def get_sessions(readings_dir=READINGS_DIR):
     )
 
 
-def get_values(seshes):
+def get_values(seshes, verbose=True):
     """Load gesture files from *seshes* directories and return RMS matrix."""
-    big_matrix = np.zeros((0, NUM_COLUMNS))
+    parts = []
     for sesh in seshes:
         for gesture in range(NUM_GESTURES):
-            path = sesh + "/" + str(gesture) + ".txt"
-            print(path)
+            path = os.path.join(sesh, f"{gesture}.txt")
+            if verbose:
+                print(path)
             matrix = np.genfromtxt(path, delimiter=",")
-            rms = get_rms(matrix, RMS_WINDOW_SIZE)
-            big_matrix = np.concatenate((big_matrix, rms), axis=0)
-    return big_matrix
+            parts.append(get_rms(matrix))
+    return np.concatenate(parts, axis=0) if parts else np.zeros((0, NUM_COLUMNS))
 
 
 def _split_and_load(session_dirs):
@@ -102,3 +104,56 @@ def load_data_all(readings_dir=READINGS_DIR):
     """Load all sessions from *readings_dir*."""
     session_dirs = get_sessions(readings_dir)
     return _split_and_load(session_dirs)
+
+
+# Auto-curation
+def _get_participant_ids(readings_dir=READINGS_DIR):
+    """Return participant IDs that have all three sessions (-1, -2, -3)."""
+    dirs = set(os.path.basename(d) for d in get_sessions(readings_dir))
+    prefixes = sorted({d.rsplit("-", 1)[0] for d in dirs if "-" in d})
+    return [pid for pid in prefixes
+            if {f"{pid}-1", f"{pid}-2", f"{pid}-3"} <= dirs]
+
+
+def generate_curated(readings_dir=READINGS_DIR,
+                     output_file=CURATED_FILE,
+                     accuracy_threshold=CURATION_ACCURACY_THRESHOLD):
+    """Train a small model per participant; write curated.txt for those above threshold."""
+    import tensorflow as tf
+    from tensorflow import keras
+
+    participant_ids = _get_participant_ids(readings_dir)
+    curated = []
+
+    for pid in participant_ids:
+        print(f"--- evaluating participant {pid} ---")
+        session_dirs = [os.path.join(readings_dir, f"{pid}-{i}") for i in range(1, 4)]
+        train_set = get_values([session_dirs[0]], verbose=False)
+        valid_set = get_values([session_dirs[1]], verbose=False)
+        test_set = get_values([session_dirs[2]], verbose=False)
+        tr, tr_l = split_features_labels(train_set)
+        va, va_l = split_features_labels(valid_set)
+        te, te_l = split_features_labels(test_set)
+
+        model = keras.Sequential([
+            keras.layers.Input(shape=(NUM_EMG_CHANNELS,)),
+            keras.layers.Dense(64, activation="relu"),
+            keras.layers.Dense(NUM_GESTURES, activation="sigmoid"),
+        ])
+        model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=LEARNING_RATE),
+            loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+            metrics=["accuracy"],
+        )
+        model.fit(tr, tr_l, validation_data=(va, va_l), epochs=10, verbose=0)
+        _, acc = model.evaluate(te, te_l, verbose=0)
+        print(f"  {pid}: test accuracy = {acc:.3f}")
+
+        if acc >= accuracy_threshold:
+            curated.append(pid)
+
+    lines = [f"{pid}-{i}" for pid in curated for i in range(1, 4)]
+    with open(output_file, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"Wrote {len(curated)} participants ({len(lines)} sessions) to {output_file}")
+    return curated
