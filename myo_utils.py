@@ -15,6 +15,9 @@ EPOCHS = 20
 PATIENCE = 5
 LAYER_SIZES = [200, 100, 70]
 GROKKING_EPOCHS = 1000
+GROKKING_LR = 1e-3
+GROKKING_TRAIN_SUBSET = 5000
+GROKKING_WEIGHT_DECAYS = [0, 1e-3, 1e-2, 5e-2, 1e-1]
 CURATION_ACCURACY_THRESHOLD = 0.7
 FIGURE_SIZE = (20, 5)
 GESTURE_LABELS = [
@@ -106,6 +109,26 @@ def load_data_all(readings_dir=READINGS_DIR):
     return _split_and_load(session_dirs)
 
 
+# Data subsampling
+def subsample_data(features, labels, n, seed=42):
+    """Return a stratified random subset of *n* samples."""
+    rng = np.random.default_rng(seed)
+    unique_labels = np.unique(labels)
+    per_class = n // len(unique_labels)
+    remainder = n - per_class * len(unique_labels)
+
+    chosen = []
+    for i, lbl in enumerate(unique_labels):
+        idx = np.where(labels == lbl)[0]
+        count = per_class + (1 if i < remainder else 0)
+        count = min(count, len(idx))
+        chosen.append(rng.choice(idx, size=count, replace=False))
+
+    chosen = np.concatenate(chosen)
+    rng.shuffle(chosen)
+    return features[chosen], labels[chosen]
+
+
 # Auto-curation
 def _get_participant_ids(readings_dir=READINGS_DIR):
     """Return participant IDs that have all three sessions (-1, -2, -3)."""
@@ -138,7 +161,7 @@ def generate_curated(readings_dir=READINGS_DIR,
         model = keras.Sequential([
             keras.layers.Input(shape=(NUM_EMG_CHANNELS,)),
             keras.layers.Dense(64, activation="relu"),
-            keras.layers.Dense(NUM_GESTURES, activation="sigmoid"),
+            keras.layers.Dense(NUM_GESTURES, activation="softmax"),
         ])
         model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=LEARNING_RATE),
