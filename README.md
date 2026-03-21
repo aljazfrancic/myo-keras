@@ -59,14 +59,14 @@ The training set is subsampled to ~5 000 samples (stratified, keeping full valid
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Architecture | Dense 200 → 100 → 70 → 8 | ~29 K params; 6:1 ratio with 5 K samples forces memorisation |
+| Architecture | Dense 200 → 100 → 70 → 8 | ~29 K params; 29:1 ratio with 1 K samples forces memorisation |
 | Output activation | `softmax` | Correct for mutually exclusive multi-class |
 | Optimiser | `AdamW` | Decoupled weight decay |
-| Learning rate | 1e-3 | Standard for AdamW |
+| Learning rate | 3e-4 | Slower; allows compression phase to develop |
 | Weight decay | [0, 1e-3, 1e-2, 5e-2, 1e-1] | Sweep to find grokking threshold |
-| Training subset | 5 000 (stratified) | Forces memorisation |
-| Epochs | 1 000 | Long enough for delayed generalisation |
-| Batch size | 32 (Keras default) | ~156 steps/epoch with 5 K samples |
+| Training subset | 1 000 (stratified) | 29:1 param ratio forces memorisation |
+| Epochs | 5 000 | Long enough for delayed generalisation |
+| Batch size | 32 (Keras default) | ~31 steps/epoch with 1 K samples |
 
 ### Key plots
 
