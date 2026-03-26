@@ -14,10 +14,11 @@ LEARNING_RATE = 0.001
 EPOCHS = 20
 PATIENCE = 5
 LAYER_SIZES = [200, 100, 70]
-GROKKING_EPOCHS = 25_000
+GROKKING_RMS_WINDOW = 30
+GROKKING_EPOCHS = 50_000
 GROKKING_LR = 3e-4
-GROKKING_TRAIN_SUBSET = 200
-GROKKING_WEIGHT_DECAYS = [0.01, 0.05, 0.1, 0.2, 0.5, 1.0]
+GROKKING_TRAIN_SUBSET = 100
+GROKKING_WEIGHT_DECAYS = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
 GROKKING_VAL_SUBSET = 8_000
 GROKKING_LOG_EVERY = 100
 CURATION_ACCURACY_THRESHOLD = 0.7
@@ -67,7 +68,7 @@ def get_sessions(readings_dir=READINGS_DIR):
     )
 
 
-def get_values(seshes, verbose=True):
+def get_values(seshes, verbose=True, rms_window=RMS_WINDOW_SIZE):
     """Load gesture files from *seshes* directories and return RMS matrix."""
     parts = []
     for sesh in seshes:
@@ -76,19 +77,19 @@ def get_values(seshes, verbose=True):
             if verbose:
                 print(path)
             matrix = np.genfromtxt(path, delimiter=",")
-            parts.append(get_rms(matrix))
+            parts.append(get_rms(matrix, n=rms_window))
     return np.concatenate(parts, axis=0) if parts else np.zeros((0, NUM_COLUMNS))
 
 
-def _split_and_load(session_dirs):
+def _split_and_load(session_dirs, rms_window=RMS_WINDOW_SIZE):
     """Split session dirs by suffix (-1 train, -2 valid, -3 test), load each."""
     train_dirs = sorted([d for d in session_dirs if os.path.basename(d).endswith("-1")])
     valid_dirs = sorted([d for d in session_dirs if os.path.basename(d).endswith("-2")])
     test_dirs = sorted([d for d in session_dirs if os.path.basename(d).endswith("-3")])
 
-    train_set = get_values(train_dirs)
-    valid_set = get_values(valid_dirs)
-    test_set = get_values(test_dirs)
+    train_set = get_values(train_dirs, rms_window=rms_window)
+    valid_set = get_values(valid_dirs, rms_window=rms_window)
+    test_set = get_values(test_dirs, rms_window=rms_window)
 
     train, train_labels = split_features_labels(train_set)
     valid, valid_labels = split_features_labels(valid_set)
@@ -97,18 +98,20 @@ def _split_and_load(session_dirs):
     return train, train_labels, valid, valid_labels, test, test_labels
 
 
-def load_data_curated(curated_file=CURATED_FILE, readings_dir=READINGS_DIR):
+def load_data_curated(
+    curated_file=CURATED_FILE, readings_dir=READINGS_DIR, rms_window=RMS_WINDOW_SIZE
+):
     """Load only curated sessions listed in *curated_file*."""
     with open(curated_file, "r") as f:
         names = [line.strip() for line in f if line.strip()]
     session_dirs = [os.path.join(readings_dir, name) for name in names]
-    return _split_and_load(session_dirs)
+    return _split_and_load(session_dirs, rms_window=rms_window)
 
 
-def load_data_all(readings_dir=READINGS_DIR):
+def load_data_all(readings_dir=READINGS_DIR, rms_window=RMS_WINDOW_SIZE):
     """Load all sessions from *readings_dir*."""
     session_dirs = get_sessions(readings_dir)
-    return _split_and_load(session_dirs)
+    return _split_and_load(session_dirs, rms_window=rms_window)
 
 
 # Data subsampling

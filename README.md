@@ -45,29 +45,30 @@ Grokking (Power et al., 2022) is a phenomenon where a neural network, trained we
 
 ### Experiment design
 
-The training set is subsampled to 200 samples (stratified) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation, while the full test set remains unchanged. Training uses `AdamW` with decoupled weight decay and sweeps over several weight decay values to find the grokking threshold.
+The grokking sweep reloads the data using an RMS window of 30 to reduce smoothing and make generalisation harder. The training set is then subsampled to 100 samples (stratified) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation, while the full test set remains unchanged. Training uses `AdamW` with decoupled weight decay and sweeps over several weight decay values to find the grokking threshold.
 
 | Weight decay | Expected behaviour |
 |--------------|--------------------|
-| 0.01 | Weak pressure; memorisation likely, delayed generalisation possible |
-| 0.05 | Moderate pressure; common transition region |
-| 0.1 | Strong pressure; often yields delayed generalisation dynamics |
-| 0.2 | Stronger pressure; can stabilise long plateaus before improvement |
-| 0.5 | Very strong pressure; may slow or limit memorisation |
-| 1.0 | Extreme pressure; can prevent full memorisation |
+| 0.1 | Weak-to-moderate pressure; memorisation likely, delayed generalisation possible |
+| 0.5 | Moderate pressure; common transition region |
+| 1.0 | Strong pressure; can induce long plateaus before improvement |
+| 2.0 | Very strong pressure; may be in the grokking zone |
+| 5.0 | Extreme pressure; may slow or limit memorisation |
+| 10.0 | Extreme pressure; can prevent full memorisation (control) |
 
 ### Parameters
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Architecture | Dense 200 → 100 → 70 → 8 | ~29 K params; 145:1 ratio with 200 samples forces memorisation |
+| Architecture | Dense 200 → 100 → 70 → 8 | ~29 K params; 290:1 ratio with 100 samples forces memorisation |
 | Output activation | `softmax` | Correct for mutually exclusive multi-class |
 | Optimiser | `AdamW` | Decoupled weight decay |
 | Learning rate | 3e-4 | Slower; allows compression phase to develop |
-| Weight decay | [0.01, 0.05, 0.1, 0.2, 0.5, 1.0] | Sweep to find grokking threshold with smaller train subset |
-| Training subset | 200 (stratified) | Large parameter-to-sample gap encourages memorisation first |
+| RMS window (grokking sweep) | 30 | Less smoothing; increases memorisation/generalisation separation |
+| Weight decay | [0.1, 0.5, 1.0, 2.0, 5.0, 10.0] | Sweep to find a strong enough compression regime |
+| Training subset | 100 (stratified) | Larger parameter-to-sample gap encourages memorisation first |
 | Validation subset | 8 000 (stratified) | Reliable metric estimates with much lower validation cost |
-| Epochs | 25 000 | Allows delayed generalisation to emerge |
+| Epochs | 50 000 | Allows delayed generalisation to emerge with stronger decay |
 | Batch size | full-batch (`len(grok_train)`) | One gradient step per epoch for stable grokking dynamics |
 | Metric logging | every 100 epochs | Tracks long-run trends without per-epoch validation overhead |
 
