@@ -45,28 +45,31 @@ Grokking (Power et al., 2022) is a phenomenon where a neural network, trained we
 
 ### Experiment design
 
-The training set is subsampled to ~5 000 samples (stratified, keeping full validation and test sets) so the model memorises before it generalises. Training uses `AdamW` with decoupled weight decay and sweeps over several weight decay values to find the grokking threshold.
+The training set is subsampled to 200 samples (stratified) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation, while the full test set remains unchanged. Training uses `AdamW` with decoupled weight decay and sweeps over several weight decay values to find the grokking threshold.
 
 | Weight decay | Expected behaviour |
 |--------------|--------------------|
-| 0 | Memorise and stay memorised (no grokking) |
-| 1e-3 | Weak pressure; grokking may appear very late or not at all |
-| 1e-2 | Moderate pressure; likely grokking region |
-| 5e-2 | Strong pressure; faster grokking, possibly lower final accuracy |
-| 1e-1 | Very strong pressure; may prevent memorisation entirely |
+| 0.01 | Weak pressure; memorisation likely, delayed generalisation possible |
+| 0.05 | Moderate pressure; common transition region |
+| 0.1 | Strong pressure; often yields delayed generalisation dynamics |
+| 0.2 | Stronger pressure; can stabilise long plateaus before improvement |
+| 0.5 | Very strong pressure; may slow or limit memorisation |
+| 1.0 | Extreme pressure; can prevent full memorisation |
 
 ### Parameters
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Architecture | Dense 200 → 100 → 70 → 8 | ~29 K params; 29:1 ratio with 1 K samples forces memorisation |
+| Architecture | Dense 200 → 100 → 70 → 8 | ~29 K params; 145:1 ratio with 200 samples forces memorisation |
 | Output activation | `softmax` | Correct for mutually exclusive multi-class |
 | Optimiser | `AdamW` | Decoupled weight decay |
 | Learning rate | 3e-4 | Slower; allows compression phase to develop |
-| Weight decay | [0, 1e-3, 1e-2, 5e-2, 1e-1] | Sweep to find grokking threshold |
-| Training subset | 1 000 (stratified) | 29:1 param ratio forces memorisation |
-| Epochs | 5 000 | Long enough for delayed generalisation |
-| Batch size | 32 (Keras default) | ~31 steps/epoch with 1 K samples |
+| Weight decay | [0.01, 0.05, 0.1, 0.2, 0.5, 1.0] | Sweep to find grokking threshold with smaller train subset |
+| Training subset | 200 (stratified) | Large parameter-to-sample gap encourages memorisation first |
+| Validation subset | 8 000 (stratified) | Reliable metric estimates with much lower validation cost |
+| Epochs | 25 000 | Allows delayed generalisation to emerge |
+| Batch size | full-batch (`len(grok_train)`) | One gradient step per epoch for stable grokking dynamics |
+| Metric logging | every 100 epochs | Tracks long-run trends without per-epoch validation overhead |
 
 ### Key plots
 
