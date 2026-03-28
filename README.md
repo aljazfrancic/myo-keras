@@ -68,16 +68,17 @@ The grokking sweep reloads the data using an RMS window of 30 to reduce smoothin
 | Weight decay | [0.1, 0.5, 1.0, 2.0, 5.0, 10.0] | Sweep to find a strong enough compression regime |
 | Training subset | 100 (stratified) | Larger parameter-to-sample gap encourages memorisation first |
 | Validation subset | 8 000 (stratified) | Reliable metric estimates with much lower validation cost |
-| Epochs | 50 000 | Allows delayed generalisation to emerge with stronger decay |
+| Epochs | 100 000 | Allows delayed generalisation to emerge with stronger decay |
 | Batch size | full-batch (`len(grok_train)`) | One gradient step per epoch for stable grokking dynamics |
 | Metric logging | every 100 epochs | Tracks long-run trends without per-epoch validation overhead |
+| Report weight decay (`GROKKING_REPORT_WD`) | 0.1 | Test-set confusion matrix uses this run (delayed generalisation), not the sweep-wide peak subsampled-val winner |
 
 ### Key plots
 
 1. **Validation accuracy overlay** — all weight decay curves on one graph; shows the threshold where grokking appears.
 2. **Weight norms overlay** — shows how stronger decay compresses the model.
 3. **Per-run loss / accuracy** — train vs val for each weight decay value.
-4. **Confusion matrix and classification report** — for the best grokking run, evaluated on the held-out test set.
+4. **Confusion matrix and classification report** — for `GROKKING_REPORT_WD`, evaluated on the held-out test set (same RMS window as the sweep); peak-val sweep winner is printed for reference only.
 
 ### References
 
