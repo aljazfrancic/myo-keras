@@ -108,15 +108,13 @@ Grokking (Power et al., 2022) is a phenomenon where a neural network, trained we
 
 ### Experiment design
 
-The grokking sweep reloads the data using an RMS window of 30 to reduce smoothing and make generalisation harder. The training set is then subsampled to 100 samples (stratified) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation, while the full test set remains unchanged. Training uses `AdamW` with decoupled weight decay and sweeps over several weight decay values to find the grokking threshold.
+The grokking sweep reloads the data using an RMS window of 30 to reduce smoothing and make generalisation harder. The training set is then subsampled to 100 samples (stratified) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation, while the full test set remains unchanged. Training uses `AdamW` with decoupled weight decay and sweeps over several weight decay values. Each run resets `tf.random.set_seed(GROKKING_INIT_SEED)` before building the model so all curves share the same initial weights (weight decay is the only intentional difference).
 
 | Weight decay | Expected behaviour |
 |--------------|--------------------|
-| 0.01 | Very weak pressure; memorisation dominates; delayed generalisation may appear very late |
-| 0.05 | Weak pressure; memorisation likely; transition region toward grokking |
-| 0.1 | Moderate pressure (centre of sweep); delayed generalisation and norm compression often visible |
-| 0.2 | Strong pressure; faster compression; may shorten plateaus |
-| 0.5 | Very strong pressure; may limit memorisation or cap final val accuracy |
+| 0.1 | Known grokking-friendly regime; delayed generalisation and norm compression often visible |
+| 1.0 | Strong pressure; faster compression; may shorten plateaus or shift grokking timing |
+| 2.0 | Very strong pressure; may limit memorisation or cap final val accuracy |
 
 ### Parameters
 
@@ -127,10 +125,11 @@ The grokking sweep reloads the data using an RMS window of 30 to reduce smoothin
 | Optimiser | `AdamW` | Decoupled weight decay |
 | Learning rate | 3e-4 | Slower; allows compression phase to develop |
 | RMS window (grokking sweep) | 30 | Less smoothing; increases memorisation/generalisation separation |
-| Weight decay | [0.01, 0.05, 0.1, 0.2, 0.5] | Sweep centred on 0.1 for grokking dynamics |
+| Weight decay | [0.1, 1.0, 2.0] | From moderate to very strong decay |
+| Init seed | `GROKKING_INIT_SEED` (42) | Same `keras.Sequential` init for every sweep run |
 | Training subset | 100 (stratified) | Larger parameter-to-sample gap encourages memorisation first |
 | Validation subset | 8,000 (stratified) | Reliable metric estimates with much lower validation cost |
-| Epochs | 100 000 | Allows delayed generalisation to emerge |
+| Epochs | 150 000 | Extra headroom for delayed generalisation at higher decay |
 | Batch size | full-batch (`len(grok_train)`) | One gradient step per epoch for stable grokking dynamics |
 | Metric logging | every 100 epochs | Tracks long-run trends without per-epoch validation overhead |
 | Report weight decay (`GROKKING_REPORT_WD`) | 0.1 | Test-set confusion matrix uses this run (delayed generalisation), not the sweep-wide peak subsampled-val winner |
