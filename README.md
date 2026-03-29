@@ -51,7 +51,9 @@ Do this once per machine; then use the Linux-side env for this repo.
 
    Optional: `pip install ipykernel` and register a kernel for this venv, then pick it in Jupyter/Cursor.
 
-6. **Notebook** — The first cell installs from `_REQ_FILE`. The checked-in notebook defaults to **`"requirements-gpu.txt"`** (WSL/Linux + NVIDIA). For **native Windows CPU**, or **Linux without a usable NVIDIA GPU**, set it to **`"requirements.txt"`** before running that cell. Restart the kernel, run the cell; with GPU packages you should see at least one GPU in the TensorFlow line. Official reference: [Install TensorFlow with pip](https://www.tensorflow.org/install/pip). If you keep CPU and GPU environments separate, use a dedicated venv (e.g. **`.venv-gpu/`**) and select **`.venv-gpu/bin/python`** as the interpreter.
+6. **Notebook** — The first cell installs from `_REQ_FILE`. The checked-in notebook defaults to **`"requirements-gpu.txt"`** (WSL/Linux + NVIDIA). For **native Windows CPU** or **Linux without a usable NVIDIA GPU**, set **`"requirements.txt"`** instead before running that cell.
+
+   Restart the kernel and run the cell. With GPU wheels installed you should see at least one GPU in the TensorFlow line. See [Install TensorFlow with pip](https://www.tensorflow.org/install/pip). If you keep CPU and GPU environments separate, use a dedicated venv (e.g. **`.venv-gpu/`**) and select **`.venv-gpu/bin/python`** as the interpreter.
 
 **Native Windows:** do **not** run `requirements-gpu.txt` in PowerShell; pip will fail with `ResolutionImpossible` / missing `nvidia-nccl-cu12`. Use **`.venv`** and `requirements.txt` (CPU), or use WSL.
 
@@ -72,7 +74,7 @@ On **Windows**, PyPI’s default `tensorflow` package is **`tensorflow-intel`** 
 
 **Workarounds:**
 
-1. **WSL2** (recommended for NVIDIA + modern TF): install Ubuntu in WSL, use the Linux kernel, `pip install -r requirements-gpu.txt` there, and open the notebook from the WSL filesystem.
+1. **WSL2** (recommended for NVIDIA + modern TF): install Ubuntu in WSL2, `pip install -r requirements-gpu.txt` there, and open the notebook from the Linux filesystem (not `/mnt/c/...` for best I/O).
 2. **Stay on CPU** on native Windows: `pip install -r requirements.txt` only, and in the notebook’s first cell set `_REQ_FILE = "requirements.txt"` so the cell does not pull GPU wheels.
 3. **Older native Windows GPU** is limited to very old TF versions (e.g. 2.10-era) with manual CUDA/cuDNN; not covered here.
 
@@ -120,14 +122,14 @@ The grokking sweep reloads the data using an RMS window of 30 to reduce smoothin
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Architecture | Dense 200 → 100 → 70 → 8 | ~29 K params; 290:1 ratio with 100 samples forces memorisation |
+| Architecture | Dense 200 → 100 → 70 → 8 | ~29.5K params; ~295:1 parameter-to-sample ratio with 100 training samples encourages memorisation first |
 | Output activation | `softmax` | Correct for mutually exclusive multi-class |
 | Optimiser | `AdamW` | Decoupled weight decay |
 | Learning rate | 3e-4 | Slower; allows compression phase to develop |
 | RMS window (grokking sweep) | 30 | Less smoothing; increases memorisation/generalisation separation |
 | Weight decay | [0.01, 0.05, 0.1, 0.2, 0.5] | Sweep centred on 0.1 for grokking dynamics |
 | Training subset | 100 (stratified) | Larger parameter-to-sample gap encourages memorisation first |
-| Validation subset | 8 000 (stratified) | Reliable metric estimates with much lower validation cost |
+| Validation subset | 8,000 (stratified) | Reliable metric estimates with much lower validation cost |
 | Epochs | 100 000 | Allows delayed generalisation to emerge |
 | Batch size | full-batch (`len(grok_train)`) | One gradient step per epoch for stable grokking dynamics |
 | Metric logging | every 100 epochs | Tracks long-run trends without per-epoch validation overhead |
@@ -139,11 +141,11 @@ The grokking sweep reloads the data using an RMS window of 30 to reduce smoothin
 2. **Weight norms overlay** — shows how stronger decay compresses the model.
 3. **Per-run loss / accuracy** — train vs val for each weight decay value.
 4. **Confusion matrix and classification report** — for `GROKKING_REPORT_WD`, evaluated on the held-out test set (same RMS window as the sweep); peak-val sweep winner is printed for reference only.
-5. **Val accuracy vs weight norm (dual axis)** — for `GROKKING_REPORT_WD`, overlays validation accuracy and L2 weight norm on the same epoch axis.
+5. **Val accuracy vs weight norm (dual-axis)** — for `GROKKING_REPORT_WD`, overlays validation accuracy and L2 weight norm on the same epoch axis.
 
 ### References
 
-- Power, A., Burda, Y., Edwards, H., Babuschkin, I., & Misra, V. (2022). *Grokking: Generalization Beyond Overfitting on Small Algorithmic Datasets*. arXiv:2201.02177.
+- Power, A., Burda, Y., Edwards, H., Babuschkin, I., & Misra, V. (2022). *Grokking: Generalization Beyond Overfitting on Small Algorithmic Datasets*. [arXiv:2201.02177](https://arxiv.org/abs/2201.02177).
 - Loshchilov, I., & Hutter, F. (2019). *Decoupled Weight Decay Regularization*. ICLR 2019.
 
 ## Auto-curation
