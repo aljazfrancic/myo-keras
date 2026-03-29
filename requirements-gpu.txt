@@ -1,0 +1,23 @@
+# NVIDIA GPU via pip-installed CUDA stack.
+#
+# Supported: Linux, or Windows inside WSL2 (Ubuntu). NOT native Windows PowerShell/CMD —
+# there is no official pip tensorflow[and-cuda] wheel for win_amd64; pip hits
+# ResolutionImpossible or installs CPU-only.
+#
+# Before first install in this venv, remove any CPU TensorFlow build:
+#   pip uninstall -y tensorflow tensorflow-cpu tensorflow-intel keras
+#
+# Then (WSL/Linux):
+#   pip install -U pip
+#   pip install -r requirements-gpu.txt
+#
+# If you still get ResolutionImpossible, install TF first, then the rest:
+#   pip install "tensorflow[and-cuda]"
+#   pip install matplotlib scikit-learn
+#
+matplotlib>=3.7.0
+scikit-learn>=1.3.0
+# TensorFlow with CUDA via pip (Linux / WSL2 only).
+# Pin 2.16.x: TF 2.17+ often breaks on WSL2 when Windows libcuda lacks newer
+# driver symbols (e.g. cuPvtCompilePtx) — GPU lists as none despite nvidia-smi working.
+tensorflow[and-cuda]>=2.16.0,<2.17.0

@@ -16,13 +16,74 @@ Expects the [myo-readings-dataset](https://github.com/aljazfrancic/myo-readings-
 pip install -r requirements.txt
 ```
 
+### GPU (optional)
+
+**Where it works:** `tensorflow[and-cuda]` (CUDA 12 via pip) is supported on **Linux** and inside **WSL2** (Ubuntu). It does **not** install cleanly on **native Windows** PowerShell/CMD (see *ResolutionImpossible* below).
+
+#### NVIDIA GPU + TensorFlow 2.16+ (Windows via WSL2)
+
+Do this once per machine; then use the Linux-side env for this repo.
+
+1. **Windows driver** — Install the latest [NVIDIA driver for your GPU](https://www.nvidia.com/Download/index.aspx). WSL uses the host driver; CUDA inside Linux comes from pip with `tensorflow[and-cuda]`.
+
+2. **WSL2 + Ubuntu** — [Install WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) and an Ubuntu distribution (`wsl --install -d Ubuntu` or similar). Open **Ubuntu** (not PowerShell) for the steps below.
+
+3. **Check the GPU from Linux** — In the Ubuntu terminal:
+
+   ```bash
+   nvidia-smi
+   ```
+
+   If this fails, fix WSL GPU support (Windows Update, driver, `wsl --shutdown` then retry) before continuing.
+
+4. **Project on the Linux filesystem** — Clone or copy `myo-keras` and `myo-readings-dataset` under your Linux home, e.g. `~/projects/myo-keras`, so paths stay fast and correct. Open the folder from Cursor/VS Code using **WSL: Ubuntu** (Remote-WSL).
+
+5. **Python 3.10–3.12 venv** (recommended):
+
+   ```bash
+   cd ~/projects/myo-keras   # your path
+   python3 -m venv .venv   # or .venv-gpu if you keep a separate GPU env
+   source .venv/bin/activate   # or .venv-gpu/bin/activate
+   pip install -U pip wheel
+   pip uninstall -y tensorflow tensorflow-cpu tensorflow-intel keras 2>/dev/null || true
+   pip install -r requirements-gpu.txt
+   ```
+
+   Optional: `pip install ipykernel` and register a kernel for this venv, then pick it in Jupyter/Cursor.
+
+6. **Notebook** — The first cell installs from `_REQ_FILE`. The checked-in notebook defaults to **`"requirements-gpu.txt"`** (WSL/Linux + NVIDIA). For **native Windows CPU**, or **Linux without a usable NVIDIA GPU**, set it to **`"requirements.txt"`** before running that cell. Restart the kernel, run the cell; with GPU packages you should see at least one GPU in the TensorFlow line. Official reference: [Install TensorFlow with pip](https://www.tensorflow.org/install/pip). If you keep CPU and GPU environments separate, use a dedicated venv (e.g. **`.venv-gpu/`**) and select **`.venv-gpu/bin/python`** as the interpreter.
+
+**Native Windows:** do **not** run `requirements-gpu.txt` in PowerShell; pip will fail with `ResolutionImpossible` / missing `nvidia-nccl-cu12`. Use **`.venv`** and `requirements.txt` (CPU), or use WSL.
+
+If `pip install -r requirements-gpu.txt` fails, try installing TensorFlow first, then the rest:
+
+```bash
+pip install "tensorflow[and-cuda]>=2.16,<2.17"
+pip install matplotlib scikit-learn
+```
+
+The **`<2.17`** upper bound matches `requirements-gpu.txt` (TF 2.17+ can fail on WSL2 when the Windows driver is too old for the bundled CUDA stack).
+
+**Do not** run `pip install -r requirements.txt` and then `requirements-gpu.txt` in the same environment without removing the plain `tensorflow` package first — that often triggers conflicting dependency resolution.
+
+#### If you see `ResolutionImpossible` on native Windows
+
+On **Windows**, PyPI’s default `tensorflow` package is **`tensorflow-intel`** (CPU). Pip’s `tensorflow[and-cuda]` still pulls **NVIDIA CUDA wheels** *and* tries to satisfy **`tensorflow-intel`** at the same time. Those stacks need different versions of **`tensorboard`**, **`protobuf`**, etc., so the resolver often reports **ResolutionImpossible** — this is expected on **native** Windows, not a corrupted venv.
+
+**Workarounds:**
+
+1. **WSL2** (recommended for NVIDIA + modern TF): install Ubuntu in WSL, use the Linux kernel, `pip install -r requirements-gpu.txt` there, and open the notebook from the WSL filesystem.
+2. **Stay on CPU** on native Windows: `pip install -r requirements.txt` only, and in the notebook’s first cell set `_REQ_FILE = "requirements.txt"` so the cell does not pull GPU wheels.
+3. **Older native Windows GPU** is limited to very old TF versions (e.g. 2.10-era) with manual CUDA/cuDNN; not covered here.
+
 ## Project structure
 
 | File | Description |
 |---|---|
 | `myo_utils.py` | Constants and utility functions (RMS, data loading, auto-curation) |
 | `myo-keras.ipynb` | Training, evaluation, and grokking experiment |
-| `requirements.txt` | Python dependencies |
+| `requirements.txt` | Python dependencies (CPU TensorFlow) |
+| `requirements-gpu.txt` | TensorFlow with CUDA via pip (Linux / WSL2) |
 
 ## Usage
 
