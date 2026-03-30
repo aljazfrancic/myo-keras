@@ -1,5 +1,4 @@
 numpy
 matplotlib
-# CPU build. For NVIDIA GPU + CUDA 12 use requirements-gpu.txt instead.
 tensorflow
 scikit-learn

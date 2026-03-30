@@ -19,7 +19,7 @@ GROKKING_EPOCHS = 150_000
 GROKKING_LR = 3e-4
 GROKKING_TRAIN_SUBSET = 100
 GROKKING_WEIGHT_DECAYS = [0.1, 1.0, 2.0]
-# Same init for every weight-decay run (isolates wd from init luck; training may still be non-deterministic on GPU).
+# Same init for every weight-decay run (isolates wd from init luck; training may still be non-deterministic).
 GROKKING_INIT_SEED = 42
 GROKKING_VAL_SUBSET = 8_000
 GROKKING_LOG_EVERY = 100
