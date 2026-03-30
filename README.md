@@ -64,7 +64,7 @@ The grokking sweep reloads the data using an RMS window of 30 to reduce smoothin
 | Init seed | `GROKKING_INIT_SEED` (42) | Same `keras.Sequential` init for every sweep run |
 | Training subset | 100 (stratified) | Larger parameter-to-sample gap encourages memorisation first |
 | Validation subset | 8,000 (stratified) | Reliable metric estimates with much lower validation cost |
-| Epochs | 150,000 | Extra headroom for delayed generalisation at higher decay |
+| Epochs | 75,000 | Enough headroom for delayed generalisation; 50k also worked in testing |
 | Batch size | full-batch (`len(grok_train)`) | One gradient step per epoch for stable grokking dynamics |
 | Metric logging | every 100 epochs | Tracks long-run trends without per-epoch validation overhead |
 | Report weight decay (`GROKKING_REPORT_WD`) | 0.1 | Test-set confusion matrix uses this run (delayed generalisation), not the sweep-wide peak subsampled-val winner |
