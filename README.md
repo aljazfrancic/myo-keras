@@ -43,39 +43,31 @@ Grokking (Power et al., 2022) is a phenomenon where a neural network, trained we
 
 ### Experiment design
 
-The grokking sweep reloads the data using an RMS window of 30 to reduce smoothing and make generalisation harder. The training set is then subsampled to 100 samples (stratified) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation, while the full test set remains unchanged. Training uses `AdamW` with decoupled weight decay and sweeps over several weight decay values. Each run resets `tf.random.set_seed(GROKKING_INIT_SEED)` before building the model so all curves share the same initial weights (weight decay is the only intentional difference).
-
-| Weight decay | Expected behaviour |
-|--------------|--------------------|
-| 0.1 | Known grokking-friendly regime; delayed generalisation and norm compression often visible |
-| 1.0 | Strong pressure; faster compression; may shorten plateaus or shift grokking timing |
-| 2.0 | Very strong pressure; may limit memorisation or cap final val accuracy |
+The grokking sweep reloads the data using an RMS window of 30 to reduce smoothing and make generalisation harder. The training set is then subsampled to 100 samples (stratified) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation. Training uses `AdamW` with decoupled weight decay and runs the **Cartesian product** of `GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS` (18 runs). Each run resets `tf.random.set_seed(GROKKING_INIT_SEED)` before building the model so all runs share the same initial weights; only the listed hyperparameters differ. The notebook prints **per-run and total wall-clock time** for the sweep.
 
 ### Parameters
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Architecture | Dense 200 → 100 → 70 → 8 | ~29.5K params; ~295:1 parameter-to-sample ratio with 100 training samples encourages memorisation first |
+| Architectures (hidden layers) | `[64, 32]`, `[100, 50]`, `[200]` | Vary capacity and depth; softmax output unchanged |
 | Output activation | `softmax` | Correct for mutually exclusive multi-class |
 | Optimiser | `AdamW` | Decoupled weight decay |
-| Learning rate | 3e-4 | Slower; allows compression phase to develop |
+| Learning rates | `3e-4`, `1e-4` | Sweep slower vs slightly slower updates |
 | RMS window (grokking sweep) | 30 | Less smoothing; increases memorisation/generalisation separation |
-| Weight decay | [0.1, 1.0, 2.0] | From moderate to very strong decay |
+| Weight decay | [0.05, 0.1, 0.2] | Moderate decay grid |
 | Init seed | `GROKKING_INIT_SEED` (42) | Same `keras.Sequential` init for every sweep run |
 | Training subset | 100 (stratified) | Larger parameter-to-sample gap encourages memorisation first |
 | Validation subset | 8,000 (stratified) | Reliable metric estimates with much lower validation cost |
-| Epochs | 75,000 | Enough headroom for delayed generalisation; 50k also worked in testing |
+| Epochs | 150,000 | Long horizon for delayed generalisation |
 | Batch size | full-batch (`len(grok_train)`) | One gradient step per epoch for stable grokking dynamics |
 | Metric logging | every 100 epochs | Tracks long-run trends without per-epoch validation overhead |
-| Report weight decay (`GROKKING_REPORT_WD`) | 0.1 | Test-set confusion matrix uses this run (delayed generalisation), not the sweep-wide peak subsampled-val winner |
 
 ### Key plots
 
-1. **Validation accuracy overlay** — all weight decay curves on one graph; shows the threshold where grokking appears.
-2. **Weight norms overlay** — shows how stronger decay compresses the model.
-3. **Per-run loss / accuracy** — train vs val for each weight decay value.
-4. **Confusion matrix and classification report** — for `GROKKING_REPORT_WD`, evaluated on the held-out test set (same RMS window as the sweep); peak-val sweep winner is printed for reference only.
-5. **Val accuracy vs weight norm (dual-axis)** — for `GROKKING_REPORT_WD`, overlays validation accuracy and L2 weight norm on the same epoch axis.
+1. **Validation accuracy overlay** — 3×2 grid (architecture × learning rate); in each panel, all weight-decay curves overlaid.
+2. **Weight norms overlay** — same grid; L2 norm of trainable weights vs epoch.
+3. **Per-run loss / accuracy** — one row per Cartesian-product run (full **arch**, **lr**, **wd** in titles).
+4. **Val accuracy vs weight norm (dual-axis)** — same 3×2 grid; in each panel, solid lines = validation accuracy, dashed = weight norm, matched colors per `wd`.
 
 ### References
 

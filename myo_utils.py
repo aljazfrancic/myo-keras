@@ -15,16 +15,15 @@ EPOCHS = 20
 PATIENCE = 5
 LAYER_SIZES = [200, 100, 70]
 GROKKING_RMS_WINDOW = 30
-GROKKING_EPOCHS = 75_000
-GROKKING_LR = 3e-4
+GROKKING_EPOCHS = 150_000
 GROKKING_TRAIN_SUBSET = 100
-GROKKING_WEIGHT_DECAYS = [0.1, 1.0, 2.0]
-# Same init for every weight-decay run (isolates wd from init luck; training may still be non-deterministic).
+GROKKING_WEIGHT_DECAYS = [0.05, 0.1, 0.2]
+GROKKING_ARCHITECTURES = [[64, 32], [100, 50], [200]]
+GROKKING_LRS = [3e-4, 1e-4]
+# Same init for every sweep run (isolates init from hyperparams; training may still be non-deterministic).
 GROKKING_INIT_SEED = 42
 GROKKING_VAL_SUBSET = 8_000
 GROKKING_LOG_EVERY = 100
-# Weight decay run used for test-set report (delayed generalisation), not sweep peak-val winner
-GROKKING_REPORT_WD = 0.1
 CURATION_ACCURACY_THRESHOLD = 0.7
 FIGURE_SIZE = (20, 5)
 GESTURE_LABELS = [
