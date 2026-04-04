@@ -64,10 +64,10 @@ The grokking sweep reloads the data using an RMS window of 30 to reduce smoothin
 
 ### Key plots
 
-1. **Validation accuracy overlay** — 3×2 grid (architecture × learning rate); in each panel, all weight-decay curves overlaid.
-2. **Weight norms overlay** — same grid; L2 norm of trainable weights vs epoch.
-3. **Per-run loss / accuracy** — one row per Cartesian-product run (full **arch**, **lr**, **wd** in titles).
-4. **Val accuracy vs weight norm (dual-axis)** — same 3×2 grid; in each panel, solid lines = validation accuracy, dashed = weight norm, matched colors per `wd`.
+1. **Validation accuracy overlay** — six separate figures (one per architecture × learning rate); in each, all weight-decay curves overlaid.
+2. **Weight norms overlay** — six separate figures (same arch × lr pairs as validation accuracy); L2 norm of trainable weights vs epoch, weight-decay curves overlaid in each.
+3. **Per-run loss / accuracy** — one figure per full Cartesian-product run (**arch** × **lr** × **wd**); each figure is a **1×2** subplot (loss | accuracy) with train vs validation for that run only.
+4. **Val accuracy vs weight norm (dual-axis)** — one figure per full sweep run (architecture × learning rate × weight decay); in each, solid = validation accuracy (left axis), dashed = L2 weight norm (right axis).
 
 ### References
 
