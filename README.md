@@ -43,18 +43,18 @@ Grokking (Power et al., 2022) is a phenomenon where a neural network, trained we
 
 ### Experiment design
 
-The grokking sweep reloads the data using an RMS window of 30 to reduce smoothing and make generalisation harder. The training set is then subsampled to 100 samples (stratified) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation. Training uses `AdamW` with decoupled weight decay and runs the **Cartesian product** of `GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS` (18 runs). Each run resets `tf.random.set_seed(GROKKING_INIT_SEED)` before building the model so all runs share the same initial weights; only the listed hyperparameters differ. The notebook prints **per-run and total wall-clock time** for the sweep.
+The grokking sweep reloads the data using an RMS window of 30 to reduce smoothing and make generalisation harder. The training set is then subsampled to 100 samples (stratified) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation. Training uses `AdamW` with decoupled weight decay and runs the **Cartesian product** of `GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS`. With the defaults in `myo_utils.py`, that is **3** runs (three architectures, one learning rate, one weight decay). Each run resets `tf.random.set_seed(GROKKING_INIT_SEED)` before building the model so all runs share the same initial weights; only the listed hyperparameters differ. The notebook prints **per-run and total wall-clock time** for the sweep. Expand the three lists in code to sweep a larger grid again.
 
 ### Parameters
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Architectures (hidden layers) | `[64, 32]`, `[100, 50]`, `[200]` | Vary capacity and depth; softmax output unchanged |
+| Architectures (hidden layers) | `[200, 100, 70]`, `[300, 200, 50]`, `[180, 80, 50]` | Deeper stacks and higher capacity; first matches main `LAYER_SIZES` |
 | Output activation | `softmax` | Correct for mutually exclusive multi-class |
 | Optimiser | `AdamW` | Decoupled weight decay |
-| Learning rates | `3e-4`, `1e-4` | Sweep slower vs slightly slower updates |
+| Learning rates | `3e-4` | Single LR to shorten wall-clock vs a multi-LR grid |
 | RMS window (grokking sweep) | 30 | Less smoothing; increases memorisation/generalisation separation |
-| Weight decay | [0.05, 0.1, 0.2] | Moderate decay grid |
+| Weight decay | `0.1` | Single value (add more entries to `GROKKING_WEIGHT_DECAYS` to overlay curves) |
 | Init seed | `GROKKING_INIT_SEED` (42) | Same `keras.Sequential` init for every sweep run |
 | Training subset | 100 (stratified) | Larger parameter-to-sample gap encourages memorisation first |
 | Validation subset | 8,000 (stratified) | Reliable metric estimates with much lower validation cost |
@@ -64,10 +64,10 @@ The grokking sweep reloads the data using an RMS window of 30 to reduce smoothin
 
 ### Key plots
 
-1. **Validation accuracy overlay** — six separate figures (one per architecture × learning rate); in each, all weight-decay curves overlaid.
-2. **Weight norms overlay** — six separate figures (same arch × lr pairs as validation accuracy); L2 norm of trainable weights vs epoch, weight-decay curves overlaid in each.
-3. **Per-run loss / accuracy** — one figure per full Cartesian-product run (**arch** × **lr** × **wd**); each figure is a **1×2** subplot (loss | accuracy) with train vs validation for that run only.
-4. **Val accuracy vs weight norm (dual-axis)** — one figure per full sweep run (architecture × learning rate × weight decay); in each, solid = validation accuracy (left axis), dashed = L2 weight norm (right axis).
+1. **Validation accuracy overlay** — one figure per **(architecture, learning rate)** pair; in each, all weight-decay curves overlaid (with a single decay in the list, each panel shows one curve).
+2. **Weight norms overlay** — same layout as (1); L2 norm of trainable weights vs epoch.
+3. **Per-run loss / accuracy** — one figure per Cartesian-product run (**arch** × **lr** × **wd**); each figure is a **1×2** subplot (loss | accuracy) with train vs validation for that run only.
+4. **Val accuracy vs weight norm (dual-axis)** — one figure per sweep run; solid = validation accuracy (left axis), dashed = L2 weight norm (right axis).
 
 ### References
 
