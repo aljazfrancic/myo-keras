@@ -43,30 +43,32 @@ Grokking (Power et al., 2022) is a phenomenon where a neural network, trained we
 
 ### Experiment design
 
-The grokking sweep reloads the data using an RMS window of 30 to reduce smoothing and make generalisation harder. The training set is then subsampled to 100 samples (stratified) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation. Training uses `AdamW` with decoupled weight decay and runs the **Cartesian product** of `GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS`. With the defaults in `myo_utils.py`, that is **12** runs (two architectures, two learning rates, three weight decays). Each run resets `tf.random.set_seed(GROKKING_INIT_SEED)` before building the model so all runs share the same initial weights; only the listed hyperparameters differ. The notebook prints **per-run and total wall-clock time** for the sweep. Shrink those three lists in `myo_utils.py` if you need a quicker smoke test; expand them for a denser hyperparameter grid.
+The grokking sweep reloads the data using an RMS window of 30 to reduce smoothing and make generalisation harder. The training set is then subsampled to 100 samples (stratified, default subsample seed 42) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation. Training uses `AdamW` with decoupled weight decay and runs the **Cartesian product** of `GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS × GROKKING_SEEDS`. With the defaults in `myo_utils.py`, architecture, learning rate, and weight decay are fixed to the values that previously showed grokking on this setup; only **random seeds** vary (**10** runs). Each run calls `tf.random.set_seed(seed)` before building the model so you can compare initialisation sensitivity. The notebook prints **per-run and total wall-clock time** for the sweep. Edit the four lists in `myo_utils.py` for a wider hyperparameter grid (for example, restore multiple weight decays and set `GROKKING_SEEDS` to a single winning seed after you find one).
+
+For reproducibility across machines, confirm `curated.txt` in the dataset repo has not changed since your reference run; regenerating it with `generate_curated()` can change which sessions enter the curated split.
 
 ### Parameters
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| Architectures (hidden layers) | `[512, 256, 128]`, `[200, 100, 70]` | High-capacity stack plus the same shape as main `LAYER_SIZES` for comparison |
+| Architectures (hidden layers) | `[200, 100, 70]` | Matches the setup that previously produced grokking-like dynamics |
 | Output activation | `softmax` | Correct for mutually exclusive multi-class |
 | Optimiser | `AdamW` | Decoupled weight decay |
-| Learning rates | `1e-4`, `3e-4` | Small sweep around a conservative LR for delayed generalisation |
+| Learning rate | `3e-4` | Fixed to match the successful historical run |
 | RMS window (grokking sweep) | 30 | Less smoothing; increases memorisation/generalisation separation |
-| Weight decay | `0.01`, `0.1`, `0.5` | Multiple values to overlay curves and find a regime where grokking may appear |
-| Init seed | `GROKKING_INIT_SEED` (42) | Same `keras.Sequential` init for every sweep run |
+| Weight decay | `0.1` | Fixed to match the successful historical run; expand the list to overlay multiple curves |
+| Seeds | `GROKKING_SEEDS` (10 values) | Sweep initialisation; grokking on noisy data may depend on init |
 | Training subset | 100 (stratified) | Larger parameter-to-sample gap encourages memorisation first |
 | Validation subset | 8,000 (stratified) | Reliable metric estimates with much lower validation cost |
-| Epochs | 500,000 | Longer horizon than before for very delayed generalisation |
+| Epochs | 80,000 | Enough headroom past ~40k where a jump was observed previously |
 | Batch size | full-batch (`len(grok_train)`) | One gradient step per epoch for stable grokking dynamics |
-| Metric logging | every 1,000 epochs | Fewer validation passes over a long run; increase frequency for finer curves |
+| Metric logging | every 100 epochs | Finer curves around late jumps in validation accuracy |
 
 ### Key plots
 
-1. **Validation accuracy overlay** — one figure per **(architecture, learning rate)** pair; in each, all weight-decay curves overlaid.
-2. **Weight norms overlay** — same layout as (1); L2 norm of trainable weights vs epoch.
-3. **Per-run loss / accuracy** — one figure per Cartesian-product run (**arch** × **lr** × **wd**); each figure is a **1×2** subplot (loss | accuracy) with train vs validation for that run only.
+1. **Validation accuracy overlay** — one figure per **(architecture, learning rate, weight decay)**; in each, all **seed** curves overlaid.
+2. **Weight norms overlay** — same layout as (1); L2 norm of trainable weights vs epoch, by seed.
+3. **Per-run loss / accuracy** — one figure per Cartesian-product run (**arch** × **lr** × **wd** × **seed**); each figure is a **1×2** subplot (loss | accuracy) with train vs validation for that run only.
 4. **Val accuracy vs weight norm (dual-axis)** — one figure per sweep run; solid = validation accuracy (left axis), dashed = L2 weight norm (right axis).
 
 ### References
