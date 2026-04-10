@@ -14,14 +14,16 @@ LEARNING_RATE = 0.001
 EPOCHS = 20
 PATIENCE = 5
 LAYER_SIZES = [200, 100, 70]
+# Grokking sweep: tune scalars and lists below. The notebook runs one training job per tuple in
+# GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS × GROKKING_SEEDS (any list may have length 1).
+# Stratified train/val subsamples use subsample_data(..., seed=42) unless you change the notebook call site.
 GROKKING_RMS_WINDOW = 30
 GROKKING_EPOCHS = 100_000
 GROKKING_TRAIN_SUBSET = 100
-# Sweep run count = len(GROKKING_ARCHITECTURES) * len(GROKKING_LRS) * len(GROKKING_WEIGHT_DECAYS) * len(GROKKING_SEEDS).
-GROKKING_WEIGHT_DECAYS = [0.05, 0.1, 0.2]
 GROKKING_ARCHITECTURES = [[200, 100, 70]]
 GROKKING_LRS = [3e-4]
-GROKKING_SEEDS = [0,256]
+GROKKING_WEIGHT_DECAYS = [0.1, 0.13, 0.16]
+GROKKING_SEEDS = [0, 100, 256]
 GROKKING_VAL_SUBSET = 8_000
 GROKKING_LOG_EVERY = 100
 CURATION_ACCURACY_THRESHOLD = 0.7

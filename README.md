@@ -43,33 +43,38 @@ Grokking (Power et al., 2022) is a phenomenon where a neural network, trained we
 
 ### Experiment design
 
-The grokking sweep reloads the data using an RMS window of 30 to reduce smoothing and make generalisation harder. The training set is then subsampled to 100 samples (stratified, default subsample seed 42) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation. Training uses `AdamW` with decoupled weight decay and runs the **Cartesian product** of `GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS × GROKKING_SEEDS`. With the defaults in `myo_utils.py`, architecture and learning rate are fixed while **weight decay** and **random seeds** are swept. Each run calls `tf.random.set_seed(seed)` before building the model so you can compare initialisation sensitivity. The notebook prints **per-run and total wall-clock time** for the sweep. Edit the four lists in `myo_utils.py` to expand/contract the grid.
+All grokking hyperparameters live in [`myo_utils.py`](myo_utils.py). The notebook reloads curated data with RMS window `GROKKING_RMS_WINDOW`, then builds stratified subsets of size `GROKKING_TRAIN_SUBSET` (train) and `GROKKING_VAL_SUBSET` (validation) for faster periodic evaluation. Training uses `AdamW` and runs **one full training job per tuple** in the Cartesian product
+
+`GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS × GROKKING_SEEDS`.
+
+Any of those lists may have length 1 (a single choice is still a valid sweep). Before each run, the notebook calls `tf.random.set_seed(seed)` with the current `seed` from `GROKKING_SEEDS`. It prints **per-run and total wall-clock time**. To resize the grid, edit those lists and scalars in `myo_utils.py` (and restart the kernel / re-import if the notebook is already running).
 
 For reproducibility across machines, confirm `curated.txt` in the dataset repo has not changed since your reference run; regenerating it with `generate_curated()` can change which sessions enter the curated split.
 
-### Parameters
+### Parameters (where to configure)
 
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| Architectures (hidden layers) | `[200, 100, 70]` | Matches the setup that previously produced grokking-like dynamics |
-| Output activation | `softmax` | Correct for mutually exclusive multi-class |
-| Optimiser | `AdamW` | Decoupled weight decay |
-| Learning rate | `3e-4` | Fixed to match the successful historical run |
-| RMS window (grokking sweep) | 30 | Less smoothing; increases memorisation/generalisation separation |
-| Weight decay | `0.05`, `0.1`, `0.2` | Sweep a small band around the previously successful regime |
-| Seeds | `GROKKING_SEEDS` (2 values) | Compare initialisation sensitivity (keep sweep short) |
-| Training subset | 100 (stratified) | Larger parameter-to-sample gap encourages memorisation first |
-| Validation subset | 8,000 (stratified) | Reliable metric estimates with much lower validation cost |
-| Epochs | 100,000 | Extra headroom for late phase transitions |
-| Batch size | full-batch (`len(grok_train)`) | One gradient step per epoch for stable grokking dynamics |
-| Metric logging | every 100 epochs | Finer curves around late jumps in validation accuracy |
+| What | Constant | Role |
+|------|----------|------|
+| Hidden-layer shapes | `GROKKING_ARCHITECTURES` | Each entry is a list of Dense widths (excluding the softmax head, which the notebook adds). |
+| Learning rates | `GROKKING_LRS` | AdamW learning rate per run. |
+| Weight decays | `GROKKING_WEIGHT_DECAYS` | AdamW decoupled weight decay per run. |
+| Initialisation seeds | `GROKKING_SEEDS` | Passed to `tf.random.set_seed` before each model build. |
+| Epochs per run | `GROKKING_EPOCHS` | No early stopping in the grokking cell. |
+| RMS window (grok reload) | `GROKKING_RMS_WINDOW` | Feature extraction window for the grokking data load only. |
+| Train subset size | `GROKKING_TRAIN_SUBSET` | Stratified subsample of the curated train split. |
+| Validation subset size | `GROKKING_VAL_SUBSET` | Stratified subsample of the curated validation split (used for logged metrics). |
+| Log / eval cadence | `GROKKING_LOG_EVERY` | Train metrics every epoch; validation + weight norm on multiples of this value (and on the final epoch). |
+| Model output | `softmax` over `NUM_GESTURES` | Mutually exclusive 8-class classification (set in the notebook). |
+| Batch size | Full batch | Notebook uses `batch_size=len(grok_train)` (one optimizer step per epoch). |
+
+Subsampling uses `subsample_data` in [`myo_utils.py`](myo_utils.py); the notebook uses that helper’s default RNG seed unless you change the call.
 
 ### Key plots
 
-1. **Validation accuracy overlay** — one figure per **(architecture, learning rate, weight decay)**; in each, all **seed** curves overlaid.
-2. **Weight norms overlay** — same layout as (1); L2 norm of trainable weights vs epoch, by seed.
-3. **Per-run loss / accuracy** — one figure per Cartesian-product run (**arch** × **lr** × **wd** × **seed**); each figure is a **1×2** subplot (loss | accuracy) with train vs validation for that run only.
-4. **Val accuracy vs weight norm (dual-axis)** — one figure per sweep run; solid = validation accuracy (left axis), dashed = L2 weight norm (right axis).
+1. **Validation accuracy overlay** — For each fixed **(architecture, learning rate, weight decay)** triple, one figure overlays **all seeds** from `GROKKING_SEEDS`.
+2. **Weight norms overlay** — Same grouping as (1); L2 norm of trainable weights vs epoch.
+3. **Per-run loss / accuracy** — One figure per Cartesian-product run; each is a **1×2** panel (loss | accuracy), train vs validation.
+4. **Val accuracy vs weight norm (dual-axis)** — One figure per run; solid = validation accuracy, dashed = L2 weight norm.
 
 ### References
 
