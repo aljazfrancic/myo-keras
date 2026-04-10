@@ -64,7 +64,7 @@ For reproducibility across machines, confirm `curated.txt` in the dataset repo h
 | RMS window (grok reload) | `GROKKING_RMS_WINDOW` | Feature extraction window for the grokking data load only. |
 | Train subset size | `GROKKING_TRAIN_SUBSET` | Stratified subsample of the curated train split. |
 | Validation subset size | `GROKKING_VAL_SUBSET` | Stratified subsample of the curated validation split (used for logged metrics). |
-| Log / eval cadence | `GROKKING_LOG_EVERY` | Train metrics every epoch; validation + weight norm on multiples of this value (and on the final epoch). |
+| Log / eval cadence | `GROKKING_LOG_EVERY` | Training still runs every epoch; **logged** train loss, train accuracy, validation metrics, and weight norm share one cadence: multiples of this value and the final epoch. |
 | Model output | `softmax` over `NUM_GESTURES` | Mutually exclusive 8-class classification (set in `build_grok_model`). |
 | Batch size | Full batch | `run_grok_sweep` uses `batch_size=len(grok_train)` (one optimizer step per epoch). |
 
