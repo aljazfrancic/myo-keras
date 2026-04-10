@@ -19,6 +19,7 @@ In our testing, training and the grokking experiment ran **faster on CPU** than 
 | File | Description |
 |---|---|
 | `myo_utils.py` | Constants and utility functions (RMS, data loading, auto-curation) |
+| `grokking.py` | Grokking sweep runner, callback, model build, and plot helpers |
 | `myo-keras.ipynb` | Training, evaluation, and grokking experiment |
 | `requirements.txt` | Python dependencies (TensorFlow, NumPy, etc.) |
 
@@ -43,11 +44,11 @@ Grokking (Power et al., 2022) is a phenomenon where a neural network, trained we
 
 ### Experiment design
 
-All grokking hyperparameters live in [`myo_utils.py`](myo_utils.py). The notebook reloads curated data with RMS window `GROKKING_RMS_WINDOW`, then builds stratified subsets of size `GROKKING_TRAIN_SUBSET` (train) and `GROKKING_VAL_SUBSET` (validation) for faster periodic evaluation. Training uses `AdamW` and runs **one full training job per tuple** in the Cartesian product
+All grokking hyperparameters live in [`myo_utils.py`](myo_utils.py). Sweep execution and plotting helpers live in [`grokking.py`](grokking.py). The notebook reloads curated data with RMS window `GROKKING_RMS_WINDOW`, then builds stratified subsets of size `GROKKING_TRAIN_SUBSET` (train) and `GROKKING_VAL_SUBSET` (validation) for faster periodic evaluation. Training uses `AdamW` and runs **one full training job per tuple** in the Cartesian product
 
 `GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS × GROKKING_SEEDS`.
 
-Any of those lists may have length 1 (a single choice is still a valid sweep). Before each run, the notebook calls `tf.random.set_seed(seed)` with the current `seed` from `GROKKING_SEEDS`. It prints **per-run and total wall-clock time**. To resize the grid, edit those lists and scalars in `myo_utils.py` (and restart the kernel / re-import if the notebook is already running).
+Any of those lists may have length 1 (a single choice is still a valid sweep). Before each run, `run_grok_sweep` calls `tf.random.set_seed(seed)` with the current `seed` from `GROKKING_SEEDS`. It prints **per-run and total wall-clock time**. To resize the grid, edit those lists and scalars in `myo_utils.py` (and restart the kernel / re-import if the notebook is already running).
 
 For reproducibility across machines, confirm `curated.txt` in the dataset repo has not changed since your reference run; regenerating it with `generate_curated()` can change which sessions enter the curated split.
 
@@ -55,17 +56,17 @@ For reproducibility across machines, confirm `curated.txt` in the dataset repo h
 
 | What | Constant | Role |
 |------|----------|------|
-| Hidden-layer shapes | `GROKKING_ARCHITECTURES` | Each entry is a list of Dense widths (excluding the softmax head, which the notebook adds). |
+| Hidden-layer shapes | `GROKKING_ARCHITECTURES` | Each entry is a list of Dense widths (excluding the softmax head, which `build_grok_model` adds). |
 | Learning rates | `GROKKING_LRS` | AdamW learning rate per run. |
 | Weight decays | `GROKKING_WEIGHT_DECAYS` | AdamW decoupled weight decay per run. |
 | Initialisation seeds | `GROKKING_SEEDS` | Passed to `tf.random.set_seed` before each model build. |
-| Epochs per run | `GROKKING_EPOCHS` | No early stopping in the grokking cell. |
+| Epochs per run | `GROKKING_EPOCHS` | No early stopping in `run_grok_sweep`. |
 | RMS window (grok reload) | `GROKKING_RMS_WINDOW` | Feature extraction window for the grokking data load only. |
 | Train subset size | `GROKKING_TRAIN_SUBSET` | Stratified subsample of the curated train split. |
 | Validation subset size | `GROKKING_VAL_SUBSET` | Stratified subsample of the curated validation split (used for logged metrics). |
 | Log / eval cadence | `GROKKING_LOG_EVERY` | Train metrics every epoch; validation + weight norm on multiples of this value (and on the final epoch). |
-| Model output | `softmax` over `NUM_GESTURES` | Mutually exclusive 8-class classification (set in the notebook). |
-| Batch size | Full batch | Notebook uses `batch_size=len(grok_train)` (one optimizer step per epoch). |
+| Model output | `softmax` over `NUM_GESTURES` | Mutually exclusive 8-class classification (set in `build_grok_model`). |
+| Batch size | Full batch | `run_grok_sweep` uses `batch_size=len(grok_train)` (one optimizer step per epoch). |
 
 Subsampling uses `subsample_data` in [`myo_utils.py`](myo_utils.py); the notebook uses that helper’s default RNG seed unless you change the call.
 

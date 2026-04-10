@@ -28,6 +28,7 @@ GROKKING_VAL_SUBSET = 8_000
 GROKKING_LOG_EVERY = 100
 CURATION_ACCURACY_THRESHOLD = 0.7
 FIGURE_SIZE = (20, 5)
+FIGURE_DPI = 200  # 2× Matplotlib default (100) for sharper display and exports
 GESTURE_LABELS = [
     "hibernation",
     "flexion",
