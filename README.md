@@ -43,7 +43,7 @@ Grokking (Power et al., 2022) is a phenomenon where a neural network, trained we
 
 ### Experiment design
 
-The grokking sweep reloads the data using an RMS window of 30 to reduce smoothing and make generalisation harder. The training set is then subsampled to 100 samples (stratified, default subsample seed 42) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation. Training uses `AdamW` with decoupled weight decay and runs the **Cartesian product** of `GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS × GROKKING_SEEDS`. With the defaults in `myo_utils.py`, architecture, learning rate, and weight decay are fixed to the values that previously showed grokking on this setup; only **random seeds** vary (**10** runs). Each run calls `tf.random.set_seed(seed)` before building the model so you can compare initialisation sensitivity. The notebook prints **per-run and total wall-clock time** for the sweep. Edit the four lists in `myo_utils.py` for a wider hyperparameter grid (for example, restore multiple weight decays and set `GROKKING_SEEDS` to a single winning seed after you find one).
+The grokking sweep reloads the data using an RMS window of 30 to reduce smoothing and make generalisation harder. The training set is then subsampled to 100 samples (stratified, default subsample seed 42) so the model memorises before it generalises. The validation set is also stratified-subsampled to 8,000 samples for fast periodic evaluation. Training uses `AdamW` with decoupled weight decay and runs the **Cartesian product** of `GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS × GROKKING_SEEDS`. With the defaults in `myo_utils.py`, architecture and learning rate are fixed while **weight decay** and **random seeds** are swept. Each run calls `tf.random.set_seed(seed)` before building the model so you can compare initialisation sensitivity. The notebook prints **per-run and total wall-clock time** for the sweep. Edit the four lists in `myo_utils.py` to expand/contract the grid.
 
 For reproducibility across machines, confirm `curated.txt` in the dataset repo has not changed since your reference run; regenerating it with `generate_curated()` can change which sessions enter the curated split.
 
@@ -56,11 +56,11 @@ For reproducibility across machines, confirm `curated.txt` in the dataset repo h
 | Optimiser | `AdamW` | Decoupled weight decay |
 | Learning rate | `3e-4` | Fixed to match the successful historical run |
 | RMS window (grokking sweep) | 30 | Less smoothing; increases memorisation/generalisation separation |
-| Weight decay | `0.1` | Fixed to match the successful historical run; expand the list to overlay multiple curves |
-| Seeds | `GROKKING_SEEDS` (10 values) | Sweep initialisation; grokking on noisy data may depend on init |
+| Weight decay | `0.05`, `0.1`, `0.2` | Sweep a small band around the previously successful regime |
+| Seeds | `GROKKING_SEEDS` (2 values) | Compare initialisation sensitivity (keep sweep short) |
 | Training subset | 100 (stratified) | Larger parameter-to-sample gap encourages memorisation first |
 | Validation subset | 8,000 (stratified) | Reliable metric estimates with much lower validation cost |
-| Epochs | 80,000 | Enough headroom past ~40k where a jump was observed previously |
+| Epochs | 100,000 | Extra headroom for late phase transitions |
 | Batch size | full-batch (`len(grok_train)`) | One gradient step per epoch for stable grokking dynamics |
 | Metric logging | every 100 epochs | Finer curves around late jumps in validation accuracy |
 
