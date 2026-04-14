@@ -16,10 +16,14 @@ from myo_utils import (
     GROKKING_EPOCHS,
     GROKKING_LOG_EVERY,
     GROKKING_LRS,
+    GROKKING_PILOT_BATCH_SIZE,
     GROKKING_PILOT_EPOCHS,
     GROKKING_PILOT_LABEL_NOISE,
     GROKKING_PILOT_LOG_EVERY,
     GROKKING_PILOT_LR,
+    GROKKING_PILOT_MOMENTUM,
+    GROKKING_PILOT_NESTEROV,
+    GROKKING_PILOT_OPTIMIZER,
     GROKKING_PILOT_SEED,
     GROKKING_PILOT_SUBSAMPLE_SEED,
     GROKKING_PILOT_TRAIN_SUBSET,
@@ -121,14 +125,33 @@ class GrokLoggingCallback(keras.callbacks.Callback):
         )
 
 
-def build_grok_model(arch, lr: float, wd: float):
+def build_grok_model(
+    arch,
+    lr: float,
+    wd: float,
+    *,
+    optimizer: str = "adamw",
+    momentum: float = 0.9,
+    nesterov: bool = True,
+):
     layers = [keras.layers.Input(shape=(NUM_EMG_CHANNELS,))]
     for units in arch:
         layers.append(keras.layers.Dense(units, activation="relu"))
     layers.append(keras.layers.Dense(NUM_GESTURES, activation="softmax"))
     model = keras.Sequential(layers)
+    if optimizer == "adamw":
+        opt = keras.optimizers.AdamW(learning_rate=lr, weight_decay=wd)
+    elif optimizer == "sgd":
+        opt = keras.optimizers.SGD(
+            learning_rate=lr,
+            momentum=momentum,
+            nesterov=nesterov,
+            weight_decay=wd,
+        )
+    else:
+        raise ValueError(f"Unknown optimizer: {optimizer!r} (expected 'adamw' or 'sgd')")
     model.compile(
-        optimizer=keras.optimizers.AdamW(learning_rate=lr, weight_decay=wd),
+        optimizer=opt,
         loss=tf.keras.losses.SparseCategoricalCrossentropy(),
         metrics=["accuracy"],
     )
@@ -351,6 +374,10 @@ def run_grok_pilot(
     label_noise: Optional[float] = None,
     subsample_seed: Optional[int] = None,
     rms_window: Optional[int] = None,
+    optimizer: Optional[str] = None,
+    momentum: Optional[float] = None,
+    nesterov: Optional[bool] = None,
+    batch_size: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Single-run grokking pilot with label noise.
 
@@ -372,6 +399,10 @@ def run_grok_pilot(
     label_noise = label_noise if label_noise is not None else GROKKING_PILOT_LABEL_NOISE
     subsample_seed = subsample_seed if subsample_seed is not None else GROKKING_PILOT_SUBSAMPLE_SEED
     rms_window = rms_window if rms_window is not None else GROKKING_RMS_WINDOW
+    optimizer = optimizer if optimizer is not None else GROKKING_PILOT_OPTIMIZER
+    momentum = momentum if momentum is not None else GROKKING_PILOT_MOMENTUM
+    nesterov = nesterov if nesterov is not None else GROKKING_PILOT_NESTEROV
+    batch_size = batch_size if batch_size is not None else GROKKING_PILOT_BATCH_SIZE
 
     print(f"Loading curated data (rms_window={rms_window})...")
     train_x_full, train_y_full, val_x_full, val_y_full = load_curated_for_grok(rms_window=rms_window)
@@ -383,15 +414,26 @@ def run_grok_pilot(
     n_flipped = int(np.sum(noisy_tr_y != clean_tr_y))
     v_x, v_y = subsample_data(val_x_full, val_y_full, val_subset, seed=42)
 
+    effective_batch_size = batch_size if batch_size is not None else len(clean_tr_x)
+    steps_per_epoch = max(1, int(np.ceil(len(clean_tr_x) / effective_batch_size)))
+    if optimizer == "sgd":
+        opt_str = f"sgd(momentum={momentum}, nesterov={nesterov})"
+    else:
+        opt_str = optimizer
+
     print(f"Train: {len(clean_tr_x)} samples, {n_flipped} labels flipped ({label_noise*100:.0f}% noise)")
     print(f"Val:   {len(v_x)} samples")
-    print(f"Config: arch={list(arch)}  lr={lr:g}  wd={wd}  seed={seed}  epochs={epochs}")
+    print(f"Config: arch={list(arch)}  opt={opt_str}  lr={lr:g}  wd={wd}  "
+          f"batch={effective_batch_size} ({steps_per_epoch} step{'s' if steps_per_epoch != 1 else ''}/epoch)  "
+          f"seed={seed}  epochs={epochs}")
     print(f"Expected shape: noisy-label train_acc saturates early at ~{1.0-label_noise:.2f}+")
     print(f"then climbs to 1.00 as the network memorizes noise; val_acc sits flat;")
     print(f"clean-label train_acc lifts off late as the network groks the true signal.\n")
 
     tf.random.set_seed(seed)
-    model = build_grok_model(arch, lr, wd)
+    model = build_grok_model(
+        arch, lr, wd, optimizer=optimizer, momentum=momentum, nesterov=nesterov
+    )
     cb = GrokLoggingCallback(
         val_data=(v_x, v_y),
         log_every=log_every,
@@ -402,9 +444,10 @@ def run_grok_pilot(
         clean_tr_x,
         noisy_tr_y,
         epochs=epochs,
-        batch_size=len(clean_tr_x),
+        batch_size=effective_batch_size,
         callbacks=[cb],
         verbose=0,
+        shuffle=True,
     )
     elapsed = time.perf_counter() - t0
     print(f"\nPilot wall time: {format_elapsed(elapsed)}")
@@ -414,6 +457,10 @@ def run_grok_pilot(
         "lr": lr,
         "wd": wd,
         "seed": seed,
+        "optimizer": optimizer,
+        "momentum": momentum,
+        "nesterov": nesterov,
+        "batch_size": effective_batch_size,
         "label_noise": label_noise,
         "train_subset": train_subset,
         "n_flipped_labels": n_flipped,
@@ -497,8 +544,13 @@ def plot_grok_pilot(pilot_result: Dict[str, Any]):
     else:
         ax3.axis("off")
 
+    opt_label = r.get("optimizer", "adamw")
+    if opt_label == "sgd":
+        opt_label = f"sgd(m={r.get('momentum', 0.9)},nesterov={r.get('nesterov', True)})"
+    bs_label = r.get("batch_size", r["train_subset"])
     fig.suptitle(
-        f"Grokking pilot: arch={list(r['arch'])}  lr={r['lr']:g}  wd={r['wd']}  "
+        f"Grokking pilot: arch={list(r['arch'])}  opt={opt_label}  "
+        f"lr={r['lr']:g}  wd={r['wd']}  batch={bs_label}  "
         f"seed={r['seed']}  noise={r['label_noise']:.2f}  train_n={r['train_subset']}",
         fontsize=12,
         y=1.03,

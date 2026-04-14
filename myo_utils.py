@@ -27,17 +27,21 @@ GROKKING_SEEDS = [100, 123, 256, 420, 789]
 GROKKING_VAL_SUBSET = 8_000
 GROKKING_LOG_EVERY = 100
 # Pilot: single-run grokking experiment with label noise to widen the memorize->generalize gap.
-# Rationale: main sweep (wd=0.1, lr=3e-4, no noise) produced delayed-generalization drift but
-# no textbook grokking because val sits at ~0.55 immediately after memorization — no real
-# plateau to escape. First pilot (wd=0.5, lr=1e-4, 40 samples, 25% noise) over-compressed:
-# val decayed post-memorization. This pilot reverts wd/lr to main-sweep territory and adds
-# 30% label noise to suppress the immediate memorization shortcut, hoping to produce a real
-# plateau the proven drift config can then climb out of.
+# Rationale: pilots 1 (wd=0.5 AdamW) and 2 (wd=0.1 AdamW) both failed in the same way —
+# clean_tr_acc pinned at (n-flipped)/n the entire run because full-batch AdamW + uniform
+# weight decay cannot eject memorized flipped-label basins. This pilot switches to mini-batch
+# SGD+momentum: stochastic gradient noise from small batches can perturb the network out of
+# single-sample memorization basins where uniform wd shrinkage cannot, and SGD's
+# non-adaptive updates are the regime where most published Omnigrok results actually occur.
+GROKKING_PILOT_OPTIMIZER = "sgd"  # "adamw" or "sgd"
+GROKKING_PILOT_MOMENTUM = 0.9
+GROKKING_PILOT_NESTEROV = True
+GROKKING_PILOT_BATCH_SIZE = 16  # set to None for full-batch
 GROKKING_PILOT_TRAIN_SUBSET = 80
-GROKKING_PILOT_LABEL_NOISE = 0.30
-GROKKING_PILOT_WD = 0.1
-GROKKING_PILOT_LR = 3e-4
-GROKKING_PILOT_EPOCHS = 150_000
+GROKKING_PILOT_LABEL_NOISE = 0.25
+GROKKING_PILOT_WD = 0.01
+GROKKING_PILOT_LR = 0.01
+GROKKING_PILOT_EPOCHS = 50_000
 GROKKING_PILOT_SEED = 100
 GROKKING_PILOT_LOG_EVERY = 100
 GROKKING_PILOT_SUBSAMPLE_SEED = 123

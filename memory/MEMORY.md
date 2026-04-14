@@ -1,2 +1,3 @@
+- [EMG dataset is load-bearing — no toy tasks](feedback_emg_dataset_is_load_bearing.md) — never propose modular arithmetic / parity / any non-EMG task as an "easier path" to grokking; the whole point is grokking *on this dataset*
 - [Grokking sweep results](project_grokking_sweep_results.md) — 15-run AdamW sweep shows delayed-generalization drift (Run 1) and dip-and-rebound (Run 7), NOT textbook flat-plateau→sharp-edge grokking; rank by plateau std, dip depth, sharpness separately
 - [Grokking label-noise pilots](project_grokking_pilot_label_noise.md) — TWO pilots both failed: P1 (wd=0.5) decayed post-mem, P2 (wd=0.1) flat 149k-epoch plateau no liftoff. clean_tr pinned at (n−flipped)/n in both. Failure is geometric, not wd tuning. Next: SGD+momentum or toy task.
