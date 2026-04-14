@@ -27,21 +27,24 @@ GROKKING_SEEDS = [100, 123, 256, 420, 789]
 GROKKING_VAL_SUBSET = 8_000
 GROKKING_LOG_EVERY = 100
 # Pilot: single-run grokking experiment with label noise to widen the memorize->generalize gap.
-# Rationale: pilots 1 (wd=0.5 AdamW) and 2 (wd=0.1 AdamW) both failed in the same way —
-# clean_tr_acc pinned at (n-flipped)/n the entire run because full-batch AdamW + uniform
-# weight decay cannot eject memorized flipped-label basins. This pilot switches to mini-batch
-# SGD+momentum: stochastic gradient noise from small batches can perturb the network out of
-# single-sample memorization basins where uniform wd shrinkage cannot, and SGD's
-# non-adaptive updates are the regime where most published Omnigrok results actually occur.
+# Rationale: pilots 1-3 (AdamW strong wd, AdamW weak wd, SGD+Nesterov mini-batch) all failed
+# the same way — clean_tr_acc pinned at (n-flipped)/n once the network settled into a basin
+# that memorized every flipped sample. Per-weight (wd) and per-step (SGD batch) perturbations
+# don't have the targeted leverage to break those basins because they push every weight a
+# little, but the basin walls are large enough that uniform pushes don't break out. This pilot
+# adds *between-sample* perturbation via mixup: each training example is linearly blended with
+# another sample in the same minibatch, so the basin around a flipped point must compete with
+# the nearby clean samples that are now constantly being averaged into it.
 GROKKING_PILOT_OPTIMIZER = "sgd"  # "adamw" or "sgd"
 GROKKING_PILOT_MOMENTUM = 0.9
 GROKKING_PILOT_NESTEROV = True
 GROKKING_PILOT_BATCH_SIZE = 16  # set to None for full-batch
+GROKKING_PILOT_MIXUP_ALPHA = 1.0  # Beta(alpha, alpha) mixing strength; 0 disables mixup
 GROKKING_PILOT_TRAIN_SUBSET = 80
 GROKKING_PILOT_LABEL_NOISE = 0.25
 GROKKING_PILOT_WD = 0.01
 GROKKING_PILOT_LR = 0.01
-GROKKING_PILOT_EPOCHS = 50_000
+GROKKING_PILOT_EPOCHS = 100_000
 GROKKING_PILOT_SEED = 100
 GROKKING_PILOT_LOG_EVERY = 100
 GROKKING_PILOT_SUBSAMPLE_SEED = 123

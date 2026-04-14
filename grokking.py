@@ -21,6 +21,7 @@ from myo_utils import (
     GROKKING_PILOT_LABEL_NOISE,
     GROKKING_PILOT_LOG_EVERY,
     GROKKING_PILOT_LR,
+    GROKKING_PILOT_MIXUP_ALPHA,
     GROKKING_PILOT_MOMENTUM,
     GROKKING_PILOT_NESTEROV,
     GROKKING_PILOT_OPTIMIZER,
@@ -133,6 +134,7 @@ def build_grok_model(
     optimizer: str = "adamw",
     momentum: float = 0.9,
     nesterov: bool = True,
+    loss: Optional[Any] = None,
 ):
     layers = [keras.layers.Input(shape=(NUM_EMG_CHANNELS,))]
     for units in arch:
@@ -150,12 +152,47 @@ def build_grok_model(
         )
     else:
         raise ValueError(f"Unknown optimizer: {optimizer!r} (expected 'adamw' or 'sgd')")
+    if loss is None:
+        loss = tf.keras.losses.SparseCategoricalCrossentropy()
     model.compile(
         optimizer=opt,
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+        loss=loss,
         metrics=["accuracy"],
     )
     return model
+
+
+def make_mixup_dataset(x, y_onehot, batch_size: int, alpha: float, seed: int):
+    """tf.data pipeline that yields mixup-augmented mini-batches.
+
+    Within each batch, sample lam ~ Beta(alpha, alpha), shuffle the batch to
+    pair each sample with another, and emit (lam*x + (1-lam)*x_perm,
+    lam*y + (1-lam)*y_perm). One lam per batch (standard mixup recipe).
+    Reshuffles between epochs so different pairings are seen each pass.
+    """
+    n = len(x)
+    ds = tf.data.Dataset.from_tensor_slices((x.astype(np.float32), y_onehot.astype(np.float32)))
+    ds = ds.shuffle(n, seed=seed, reshuffle_each_iteration=True)
+    ds = ds.batch(batch_size, drop_remainder=False)
+
+    alpha_t = tf.constant(alpha, dtype=tf.float32)
+
+    def _mixup(xb, yb):
+        bs = tf.shape(xb)[0]
+        # Sample lam ~ Beta(alpha, alpha) via two Gammas (no tfp dependency).
+        g1 = tf.random.gamma([], alpha=alpha_t)
+        g2 = tf.random.gamma([], alpha=alpha_t)
+        lam = g1 / (g1 + g2)
+        idx = tf.random.shuffle(tf.range(bs))
+        xb_perm = tf.gather(xb, idx)
+        yb_perm = tf.gather(yb, idx)
+        xb_mix = lam * xb + (1.0 - lam) * xb_perm
+        yb_mix = lam * yb + (1.0 - lam) * yb_perm
+        return xb_mix, yb_mix
+
+    ds = ds.map(_mixup, num_parallel_calls=tf.data.AUTOTUNE)
+    ds = ds.prefetch(tf.data.AUTOTUNE)
+    return ds
 
 
 def run_grok_sweep(
@@ -378,6 +415,7 @@ def run_grok_pilot(
     momentum: Optional[float] = None,
     nesterov: Optional[bool] = None,
     batch_size: Optional[int] = None,
+    mixup_alpha: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Single-run grokking pilot with label noise.
 
@@ -403,6 +441,7 @@ def run_grok_pilot(
     momentum = momentum if momentum is not None else GROKKING_PILOT_MOMENTUM
     nesterov = nesterov if nesterov is not None else GROKKING_PILOT_NESTEROV
     batch_size = batch_size if batch_size is not None else GROKKING_PILOT_BATCH_SIZE
+    mixup_alpha = mixup_alpha if mixup_alpha is not None else GROKKING_PILOT_MIXUP_ALPHA
 
     print(f"Loading curated data (rms_window={rms_window})...")
     train_x_full, train_y_full, val_x_full, val_y_full = load_curated_for_grok(rms_window=rms_window)
@@ -416,39 +455,68 @@ def run_grok_pilot(
 
     effective_batch_size = batch_size if batch_size is not None else len(clean_tr_x)
     steps_per_epoch = max(1, int(np.ceil(len(clean_tr_x) / effective_batch_size)))
+    use_mixup = mixup_alpha is not None and mixup_alpha > 0
     if optimizer == "sgd":
         opt_str = f"sgd(momentum={momentum}, nesterov={nesterov})"
     else:
         opt_str = optimizer
+    mixup_str = f"mixup(alpha={mixup_alpha})" if use_mixup else "no-mixup"
 
     print(f"Train: {len(clean_tr_x)} samples, {n_flipped} labels flipped ({label_noise*100:.0f}% noise)")
     print(f"Val:   {len(v_x)} samples")
     print(f"Config: arch={list(arch)}  opt={opt_str}  lr={lr:g}  wd={wd}  "
           f"batch={effective_batch_size} ({steps_per_epoch} step{'s' if steps_per_epoch != 1 else ''}/epoch)  "
-          f"seed={seed}  epochs={epochs}")
+          f"{mixup_str}  seed={seed}  epochs={epochs}")
     print(f"Expected shape: noisy-label train_acc saturates early at ~{1.0-label_noise:.2f}+")
     print(f"then climbs to 1.00 as the network memorizes noise; val_acc sits flat;")
     print(f"clean-label train_acc lifts off late as the network groks the true signal.\n")
 
     tf.random.set_seed(seed)
-    model = build_grok_model(
-        arch, lr, wd, optimizer=optimizer, momentum=momentum, nesterov=nesterov
-    )
-    cb = GrokLoggingCallback(
-        val_data=(v_x, v_y),
-        log_every=log_every,
-        clean_train_data=(clean_tr_x, clean_tr_y),
-    )
-    t0 = time.perf_counter()
-    model.fit(
-        clean_tr_x,
-        noisy_tr_y,
-        epochs=epochs,
-        batch_size=effective_batch_size,
-        callbacks=[cb],
-        verbose=0,
-        shuffle=True,
-    )
+    if use_mixup:
+        # one-hot path: categorical loss, mixup tf.data pipeline. Convert val and clean_tr
+        # labels to one-hot so the callback's model.evaluate calls match the loss format.
+        noisy_tr_y_oh = np.eye(NUM_GESTURES, dtype=np.float32)[noisy_tr_y.astype(np.int64)]
+        clean_tr_y_oh = np.eye(NUM_GESTURES, dtype=np.float32)[clean_tr_y.astype(np.int64)]
+        v_y_oh = np.eye(NUM_GESTURES, dtype=np.float32)[v_y.astype(np.int64)]
+        train_ds = make_mixup_dataset(
+            clean_tr_x, noisy_tr_y_oh, effective_batch_size, mixup_alpha, seed
+        )
+        model = build_grok_model(
+            arch, lr, wd,
+            optimizer=optimizer, momentum=momentum, nesterov=nesterov,
+            loss=tf.keras.losses.CategoricalCrossentropy(),
+        )
+        cb = GrokLoggingCallback(
+            val_data=(v_x, v_y_oh),
+            log_every=log_every,
+            clean_train_data=(clean_tr_x, clean_tr_y_oh),
+        )
+        t0 = time.perf_counter()
+        model.fit(
+            train_ds,
+            epochs=epochs,
+            callbacks=[cb],
+            verbose=0,
+        )
+    else:
+        model = build_grok_model(
+            arch, lr, wd, optimizer=optimizer, momentum=momentum, nesterov=nesterov
+        )
+        cb = GrokLoggingCallback(
+            val_data=(v_x, v_y),
+            log_every=log_every,
+            clean_train_data=(clean_tr_x, clean_tr_y),
+        )
+        t0 = time.perf_counter()
+        model.fit(
+            clean_tr_x,
+            noisy_tr_y,
+            epochs=epochs,
+            batch_size=effective_batch_size,
+            callbacks=[cb],
+            verbose=0,
+            shuffle=True,
+        )
     elapsed = time.perf_counter() - t0
     print(f"\nPilot wall time: {format_elapsed(elapsed)}")
 
@@ -461,6 +529,7 @@ def run_grok_pilot(
         "momentum": momentum,
         "nesterov": nesterov,
         "batch_size": effective_batch_size,
+        "mixup_alpha": mixup_alpha if use_mixup else 0.0,
         "label_noise": label_noise,
         "train_subset": train_subset,
         "n_flipped_labels": n_flipped,
@@ -548,9 +617,11 @@ def plot_grok_pilot(pilot_result: Dict[str, Any]):
     if opt_label == "sgd":
         opt_label = f"sgd(m={r.get('momentum', 0.9)},nesterov={r.get('nesterov', True)})"
     bs_label = r.get("batch_size", r["train_subset"])
+    mixup_a = r.get("mixup_alpha", 0.0)
+    mixup_label = f"  mixup={mixup_a}" if mixup_a else ""
     fig.suptitle(
         f"Grokking pilot: arch={list(r['arch'])}  opt={opt_label}  "
-        f"lr={r['lr']:g}  wd={r['wd']}  batch={bs_label}  "
+        f"lr={r['lr']:g}  wd={r['wd']}  batch={bs_label}{mixup_label}  "
         f"seed={r['seed']}  noise={r['label_noise']:.2f}  train_n={r['train_subset']}",
         fontsize=12,
         y=1.03,
