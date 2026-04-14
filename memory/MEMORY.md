@@ -1,0 +1,2 @@
+- [Grokking sweep results](project_grokking_sweep_results.md) — 15-run AdamW sweep shows delayed-generalization drift (Run 1) and dip-and-rebound (Run 7), NOT textbook flat-plateau→sharp-edge grokking; rank by plateau std, dip depth, sharpness separately
+- [Grokking label-noise pilot](project_grokking_pilot_label_noise.md) — 1h pilot (wd=0.5, 25% noise, 40 samples) produced NO grokking: clean_tr_acc pinned 0.75 all run, val peaks 0.404 post-memorization then decays to 0.385 (anti-grok)

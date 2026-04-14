@@ -16,12 +16,23 @@ from myo_utils import (
     GROKKING_EPOCHS,
     GROKKING_LOG_EVERY,
     GROKKING_LRS,
+    GROKKING_PILOT_EPOCHS,
+    GROKKING_PILOT_LABEL_NOISE,
+    GROKKING_PILOT_LOG_EVERY,
+    GROKKING_PILOT_LR,
+    GROKKING_PILOT_SEED,
+    GROKKING_PILOT_SUBSAMPLE_SEED,
+    GROKKING_PILOT_TRAIN_SUBSET,
+    GROKKING_PILOT_WD,
     GROKKING_RMS_WINDOW,
     GROKKING_SEEDS,
+    GROKKING_VAL_SUBSET,
     GROKKING_WEIGHT_DECAYS,
     NUM_EMG_CHANNELS,
     NUM_GESTURES,
+    apply_label_noise,
     load_data_curated,
+    subsample_data,
 )
 
 
@@ -49,18 +60,32 @@ def load_curated_for_grok(rms_window: Optional[int] = None):
 
 
 class GrokLoggingCallback(keras.callbacks.Callback):
-    """Logs train metrics + periodic validation metrics + weight norm."""
+    """Logs train metrics + periodic validation metrics + weight norm.
 
-    def __init__(self, val_data, log_every: int = GROKKING_LOG_EVERY):
+    If clean_train_data is provided, also tracks train loss/accuracy against the
+    CLEAN (unflipped) labels on each logging tick. This is the key signal for
+    label-noise grokking: clean-label loss drops *after* noisy-label loss
+    saturates, and its onset is the moment the network stops fitting the noise.
+    """
+
+    def __init__(
+        self,
+        val_data,
+        log_every: int = GROKKING_LOG_EVERY,
+        clean_train_data=None,
+    ):
         super().__init__()
         self.val_features, self.val_labels = val_data
         self.log_every = log_every
+        self.clean_train_data = clean_train_data
         self.epochs: List[int] = []
         self.train_loss: List[float] = []
         self.train_accuracy: List[float] = []
         self.val_loss: List[float] = []
         self.val_accuracy: List[float] = []
         self.weight_norms: List[float] = []
+        self.clean_train_loss: List[float] = []
+        self.clean_train_accuracy: List[float] = []
 
     def on_epoch_end(self, epoch, logs=None):
         ep = epoch + 1
@@ -80,11 +105,19 @@ class GrokLoggingCallback(keras.callbacks.Callback):
         )
         self.weight_norms.append(float(weight_norm))
 
+        extra = ""
+        if self.clean_train_data is not None:
+            cf, cl = self.clean_train_data
+            cl_loss, cl_acc = self.model.evaluate(cf, cl, verbose=0)
+            self.clean_train_loss.append(float(cl_loss))
+            self.clean_train_accuracy.append(float(cl_acc))
+            extra = f"  clean_tr_acc={cl_acc:.4f}"
+
         print(
             f"Epoch {ep:>6d}  "
             f"train_acc={logs['accuracy']:.4f}  "
             f"val_acc={val_acc:.4f}  "
-            f"wnorm={weight_norm:.2f}"
+            f"wnorm={weight_norm:.2f}{extra}"
         )
 
 
@@ -303,3 +336,172 @@ def plot_grok_run_valacc_weight_norm(sweep_results, arch, lr: float, wd: float, 
     ax1.legend(h1 + h2, l1 + l2, fontsize=9, loc="best")
     plt.tight_layout()
     return fig, (ax1, ax2)
+
+
+def run_grok_pilot(
+    *,
+    arch: Optional[List[int]] = None,
+    lr: Optional[float] = None,
+    wd: Optional[float] = None,
+    seed: Optional[int] = None,
+    epochs: Optional[int] = None,
+    log_every: Optional[int] = None,
+    train_subset: Optional[int] = None,
+    val_subset: Optional[int] = None,
+    label_noise: Optional[float] = None,
+    subsample_seed: Optional[int] = None,
+    rms_window: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Single-run grokking pilot with label noise.
+
+    Widens the memorize->generalize gap by flipping a fraction of training
+    labels: the network must memorize noise first, which blocks statistical
+    shortcuts and creates a real plateau to grok out of. Tracks both
+    noisy-label (optimizer target) and clean-label (ground-truth) metrics so
+    the grokking onset is visible as clean-label accuracy lifting off while
+    noisy-label accuracy stays pinned at 1.0.
+    """
+    arch = arch if arch is not None else GROKKING_ARCHITECTURES[0]
+    lr = lr if lr is not None else GROKKING_PILOT_LR
+    wd = wd if wd is not None else GROKKING_PILOT_WD
+    seed = seed if seed is not None else GROKKING_PILOT_SEED
+    epochs = epochs if epochs is not None else GROKKING_PILOT_EPOCHS
+    log_every = log_every if log_every is not None else GROKKING_PILOT_LOG_EVERY
+    train_subset = train_subset if train_subset is not None else GROKKING_PILOT_TRAIN_SUBSET
+    val_subset = val_subset if val_subset is not None else GROKKING_VAL_SUBSET
+    label_noise = label_noise if label_noise is not None else GROKKING_PILOT_LABEL_NOISE
+    subsample_seed = subsample_seed if subsample_seed is not None else GROKKING_PILOT_SUBSAMPLE_SEED
+    rms_window = rms_window if rms_window is not None else GROKKING_RMS_WINDOW
+
+    print(f"Loading curated data (rms_window={rms_window})...")
+    train_x_full, train_y_full, val_x_full, val_y_full = load_curated_for_grok(rms_window=rms_window)
+
+    clean_tr_x, clean_tr_y = subsample_data(
+        train_x_full, train_y_full, train_subset, seed=subsample_seed
+    )
+    noisy_tr_y = apply_label_noise(clean_tr_y, label_noise, seed=seed)
+    n_flipped = int(np.sum(noisy_tr_y != clean_tr_y))
+    v_x, v_y = subsample_data(val_x_full, val_y_full, val_subset, seed=42)
+
+    print(f"Train: {len(clean_tr_x)} samples, {n_flipped} labels flipped ({label_noise*100:.0f}% noise)")
+    print(f"Val:   {len(v_x)} samples")
+    print(f"Config: arch={list(arch)}  lr={lr:g}  wd={wd}  seed={seed}  epochs={epochs}")
+    print(f"Expected shape: noisy-label train_acc saturates early at ~{1.0-label_noise:.2f}+")
+    print(f"then climbs to 1.00 as the network memorizes noise; val_acc sits flat;")
+    print(f"clean-label train_acc lifts off late as the network groks the true signal.\n")
+
+    tf.random.set_seed(seed)
+    model = build_grok_model(arch, lr, wd)
+    cb = GrokLoggingCallback(
+        val_data=(v_x, v_y),
+        log_every=log_every,
+        clean_train_data=(clean_tr_x, clean_tr_y),
+    )
+    t0 = time.perf_counter()
+    model.fit(
+        clean_tr_x,
+        noisy_tr_y,
+        epochs=epochs,
+        batch_size=len(clean_tr_x),
+        callbacks=[cb],
+        verbose=0,
+    )
+    elapsed = time.perf_counter() - t0
+    print(f"\nPilot wall time: {format_elapsed(elapsed)}")
+
+    return {
+        "arch": tuple(arch),
+        "lr": lr,
+        "wd": wd,
+        "seed": seed,
+        "label_noise": label_noise,
+        "train_subset": train_subset,
+        "n_flipped_labels": n_flipped,
+        "epochs": cb.epochs,
+        "train_loss": cb.train_loss,
+        "train_accuracy": cb.train_accuracy,
+        "val_loss": cb.val_loss,
+        "val_accuracy": cb.val_accuracy,
+        "weight_norms": cb.weight_norms,
+        "clean_train_loss": cb.clean_train_loss,
+        "clean_train_accuracy": cb.clean_train_accuracy,
+        "elapsed": elapsed,
+        "model": model,
+    }
+
+
+def plot_grok_pilot(pilot_result: Dict[str, Any]):
+    """Four-panel summary of a label-noise grokking pilot.
+
+    Panels:
+      (0) Accuracy — noisy-label train (optimizer target), clean-label train
+          (ground-truth fit), val. The grokking gap is between noisy-label
+          train saturation and clean-label train / val lift-off.
+      (1) Loss — same three series in loss space; clean-label loss is the
+          sharpest early-warning of grokking onset.
+      (2) Val accuracy vs L2 weight norm (dual axis).
+      (3) Clean-minus-noisy train accuracy gap — negative during memorization,
+          climbs toward zero as the network stops fitting the noise. Crossing
+          zero is the unambiguous grokking moment.
+    """
+    import matplotlib.pyplot as plt
+
+    r = pilot_result
+    x = r["epochs"]
+    has_clean = len(r["clean_train_accuracy"]) > 0
+
+    fig, axes = plt.subplots(1, 4, figsize=(22, 5), dpi=FIGURE_DPI)
+    ax0, ax1, ax2, ax3 = axes
+
+    ax0.plot(x, r["train_accuracy"], label="train acc (noisy labels)", color="C0", alpha=0.9)
+    if has_clean:
+        ax0.plot(x, r["clean_train_accuracy"], label="train acc (clean labels)", color="C2", alpha=0.9)
+    ax0.plot(x, r["val_accuracy"], label="val acc", color="C3", alpha=0.9)
+    ax0.set_xlabel("Epoch")
+    ax0.set_ylabel("Accuracy")
+    ax0.set_title("Accuracy")
+    ax0.grid(True, alpha=0.3)
+    ax0.legend(fontsize=8, loc="best")
+
+    ax1.plot(x, r["train_loss"], label="train loss (noisy)", color="C0", alpha=0.9)
+    if has_clean:
+        ax1.plot(x, r["clean_train_loss"], label="train loss (clean)", color="C2", alpha=0.9)
+    ax1.plot(x, r["val_loss"], label="val loss", color="C3", alpha=0.9)
+    ax1.set_xlabel("Epoch")
+    ax1.set_ylabel("Loss")
+    ax1.set_title("Loss")
+    ax1.set_yscale("log")
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(fontsize=8, loc="best")
+
+    ax2b = ax2.twinx()
+    ax2.plot(x, r["val_accuracy"], color="C0", linewidth=1.4, label="val acc", alpha=0.9)
+    ax2b.plot(x, r["weight_norms"], color="orange", linestyle="--", linewidth=1.4, label="L2 weight norm", alpha=0.9)
+    ax2.set_xlabel("Epoch")
+    ax2.set_ylabel("Val accuracy")
+    ax2b.set_ylabel("L2 weight norm")
+    ax2.set_title("Val acc vs weight norm")
+    ax2.grid(True, alpha=0.3)
+    h1, l1 = ax2.get_legend_handles_labels()
+    h2, l2 = ax2b.get_legend_handles_labels()
+    ax2.legend(h1 + h2, l1 + l2, fontsize=8, loc="best")
+
+    if has_clean:
+        gap = np.array(r["clean_train_accuracy"]) - np.array(r["train_accuracy"])
+        ax3.plot(x, gap, color="C4", alpha=0.9)
+        ax3.axhline(0.0, color="black", linewidth=0.5, linestyle=":")
+        ax3.set_xlabel("Epoch")
+        ax3.set_ylabel("clean_train_acc − noisy_train_acc")
+        ax3.set_title("Grokking gap (→ 0 when groked)")
+        ax3.grid(True, alpha=0.3)
+    else:
+        ax3.axis("off")
+
+    fig.suptitle(
+        f"Grokking pilot: arch={list(r['arch'])}  lr={r['lr']:g}  wd={r['wd']}  "
+        f"seed={r['seed']}  noise={r['label_noise']:.2f}  train_n={r['train_subset']}",
+        fontsize=12,
+        y=1.03,
+    )
+    plt.tight_layout()
+    return fig, axes

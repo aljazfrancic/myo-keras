@@ -26,6 +26,19 @@ GROKKING_WEIGHT_DECAYS = [0.09, 0.1, 0.11]
 GROKKING_SEEDS = [100, 123, 256, 420, 789]
 GROKKING_VAL_SUBSET = 8_000
 GROKKING_LOG_EVERY = 100
+# Pilot: single-run grokking experiment with label noise to widen the memorize->generalize gap.
+# Rationale: the main sweep found only delayed-generalization drift because val sits at ~0.55
+# immediately after memorization (no near-chance plateau to escape). Label noise forces the
+# network to memorize wrong targets, which blocks statistical shortcuts and creates a real
+# plateau to grok out of.
+GROKKING_PILOT_TRAIN_SUBSET = 80
+GROKKING_PILOT_LABEL_NOISE = 0.25
+GROKKING_PILOT_WD = 0.1
+GROKKING_PILOT_LR = 3e-4
+GROKKING_PILOT_EPOCHS = 300_000
+GROKKING_PILOT_SEED = 100
+GROKKING_PILOT_LOG_EVERY = 100
+GROKKING_PILOT_SUBSAMPLE_SEED = 123
 CURATION_ACCURACY_THRESHOLD = 0.7
 FIGURE_SIZE = (20, 5)
 FIGURE_DPI = 200  # 2× Matplotlib default (100) for sharper display and exports
@@ -118,6 +131,24 @@ def load_data_all(readings_dir=READINGS_DIR, rms_window=RMS_WINDOW_SIZE):
     """Load all sessions from *readings_dir*."""
     session_dirs = get_sessions(readings_dir)
     return _split_and_load(session_dirs, rms_window=rms_window)
+
+
+def apply_label_noise(labels, noise_fraction, num_classes=NUM_GESTURES, seed=42):
+    """Flip a fraction of labels uniformly to a different class. Returns a new array."""
+    rng = np.random.default_rng(seed)
+    labels = np.asarray(labels).copy()
+    n = len(labels)
+    n_flip = int(round(n * noise_fraction))
+    if n_flip == 0:
+        return labels
+    flip_idx = rng.choice(n, size=n_flip, replace=False)
+    for i in flip_idx:
+        original = int(labels[i])
+        wrong = int(rng.integers(0, num_classes - 1))
+        if wrong >= original:
+            wrong += 1
+        labels[i] = wrong
+    return labels
 
 
 # Data subsampling
