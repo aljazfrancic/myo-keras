@@ -16,6 +16,7 @@ from myo_utils import (
     GROKKING_EPOCHS,
     GROKKING_LOG_EVERY,
     GROKKING_LRS,
+    GROKKING_PILOT_ARCH,
     GROKKING_PILOT_BATCH_SIZE,
     GROKKING_PILOT_EPOCHS,
     GROKKING_PILOT_LABEL_NOISE,
@@ -426,7 +427,7 @@ def run_grok_pilot(
     the grokking onset is visible as clean-label accuracy lifting off while
     noisy-label accuracy stays pinned at 1.0.
     """
-    arch = arch if arch is not None else GROKKING_ARCHITECTURES[0]
+    arch = arch if arch is not None else GROKKING_PILOT_ARCH
     lr = lr if lr is not None else GROKKING_PILOT_LR
     wd = wd if wd is not None else GROKKING_PILOT_WD
     seed = seed if seed is not None else GROKKING_PILOT_SEED

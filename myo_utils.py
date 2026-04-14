@@ -35,6 +35,7 @@ GROKKING_LOG_EVERY = 100
 # adds *between-sample* perturbation via mixup: each training example is linearly blended with
 # another sample in the same minibatch, so the basin around a flipped point must compete with
 # the nearby clean samples that are now constantly being averaged into it.
+GROKKING_PILOT_ARCH = [64, 32]  # shrunk from [200,100,70] — ~375 params/sample was over-parameterized
 GROKKING_PILOT_OPTIMIZER = "sgd"  # "adamw" or "sgd"
 GROKKING_PILOT_MOMENTUM = 0.9
 GROKKING_PILOT_NESTEROV = True

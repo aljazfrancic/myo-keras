@@ -1,6 +1,6 @@
 ---
-name: label-noise grokking pilots — P4 (mixup α=1 + wd=0.01) is best; P5 three-knob combo regressed hard
-description: Five grokking pilots on EMG. P1–P3 (no mixup) pinned clean_tr at (n−flipped)/n with val ≤0.47. P4 (SGD + mixup α=1 + wd=0.01) broke the pattern: val 0.58 sustained, clean_tr escaped to 0.7625. P5 (α=4 + wd=0 + noise=0.35) regressed back to val 0.40 with weight norm exploding 16→100 and clean_tr re-pinned at 0.65. Diagnostic: wd=0 removes the magnitude cap that made mixup effective in P4. wd is load-bearing when using mixup, not optional.
+name: label-noise grokking pilots — P4 still best; P6 confirms α knob is saturated; real bottleneck is no flat plateau (net too over-parameterized)
+description: Six grokking pilots on EMG. P1–P3 (no mixup) pinned clean_tr with val ≤0.47. P4 (SGD + mixup α=1 + wd=0.01) best: val 0.58 sustained. P5 (α=4, wd=0, noise=0.35) regressed to val 0.40 via weight-norm explosion (wd=0 escape route). P6 (P4 + α=4 alone) small regression to val ~0.53 — confirms α knob saturated at α=1 and P5 collapse was mostly wd-attributable. Real diagnosis across all pilots: NO flat plateau exists — val rises continuously from ep 100. Net is over-parameterized ([200,100,70]=30k params on 80 samples). Next: shrink arch to [64,32].
 type: project
 ---
 
@@ -91,31 +91,47 @@ This was the "combine all three aggressive knobs at once" test requested after P
 - Noise 0.35 moved the "all flipped memorized" floor from 0.75 to 0.65. P5 settled at exactly this floor, so higher noise doesn't inherently help — it just relocates the failure line.
 - α=4 was not tested in isolation. α=4 with wd in place may still be productive (the P4 mechanism with stronger mixing) — P5 can't tell us either way.
 
-## Joint conclusion across five pilots
+## Pilot 6 — SGD+Nesterov + mixup α=4, wd=0.01, noise=0.25 (α knob saturated)
+Config: exactly P4 with `mixup_alpha=4.0`. Epochs 100,000, seed=100. Wall time **1h 36m 27s**.
 
-P1–P3 jointly showed that **per-weight (wd) and per-step (SGD batch noise) perturbations cannot break the flipped-label memorization basins** on this 8-D, 80-sample regime. P4 showed that **between-sample perturbations (mixup) can**, at least partially — enough to jump val ceiling by +10 points and crack the clean_tr pinning by 1–2 samples. P5 showed that **mixup alone is not enough** — without wd capping weight magnitudes, the network escapes mixup's regularization by inflating weights.
+This was the single cleanest next experiment from the P5 post-mortem: isolate the α knob with wd/noise held at P4 values.
 
-The updated model: **mixup needs wd**. Mixup regularizes the input/label space (forces locally linear decisions between sample pairs); wd regularizes the weight space (caps decision-boundary sharpness). Together they make the network unable to form sharp isolated basins. Remove either and the network finds an escape route — wd alone (P1–P3) lets the network form sharp basins around isolated points; mixup alone (P5) lets the network form sharp decision boundaries via weight inflation. **P4 is in the narrow intersection where both mechanisms cooperate.**
+- **Val peak 0.5645 @ ep 4,700.** Below P4's 0.5822.
+- **Val stable band ~0.52–0.55** for epochs 10k–100k. Final val **0.5247** (ep 100k). Late-window mean ≈ 0.53. **Net regression from P4: −0.05 val.**
+- **`clean_tr_acc` escaped the floor to 0.7625** by ep 1,100 and stayed there — exactly matching P4's settled floor. The α=4 change did not improve clean-label escape beyond what α=1 already achieves.
+- **Weight norm grew 15.6 → 22.2** and stabilized. No explosion (wd held), comparable to P4's final 22.27. wd is confirmed load-bearing even at α=4.
+- **Noisy `train_acc`** ranged ~0.65–0.85 throughout (similar to P4). Mixup still preventing saturation.
 
-P4 remains the best pilot. Val 0.58 sustained for 90k epochs is a strong EMG-with-label-noise result on its own, even though the shape is "delayed drift with partial escape" rather than textbook grokking.
+**Interpretation.** α=4 alone is a small regression from α=1, not an improvement. Mechanism: Beta(4,4) concentrates the mixing coefficient near λ=0.5, so nearly every training example becomes a ~50/50 blend of two samples. With only 80 training samples, this over-smooths the signal — there isn't enough per-sample information left for the network to learn sharp class boundaries, so val ceiling drops. α=1 (uniform Beta) is the sweet spot for this train_subset size. **The α knob is saturated.**
+
+**The diagnostic insight from P6:** plotting val across all six pilots, **none of them show a flat plateau**. Val rises continuously from ep 100 onward in every pilot. The canonical grokking shape (flat plateau → sharp vertical rise) requires a *phase separation* where memorization completes long before generalization starts. On this EMG task with arch=[200,100,70] and n=80, the network generalizes gradually from step 1 — it never enters a pure-memorization regime. **Real failure mode across all six pilots: arch is too big.** [200,100,70] has ~30,000 params for 80 samples ≈ 375 params/sample, way into the over-parameterized regime where the network immediately finds partial generalization alongside memorization. To force a memorization-first phase, shrink the net.
+
+## Joint conclusion across six pilots
+
+P1–P3 jointly showed that **per-weight (wd) and per-step (SGD batch noise) perturbations cannot break the flipped-label memorization basins** on this 8-D, 80-sample regime. P4 showed that **between-sample perturbations (mixup) can**, at least partially — enough to jump val ceiling by +10 points and crack the clean_tr pinning by 1–2 samples. P5 showed that **mixup needs wd** — without wd capping weight magnitudes, the network escapes mixup's regularization by inflating weights (16→100). P6 showed that **the α knob is saturated at α=1** — α=4 alone is a small regression (~0.53 vs 0.58), because Beta(4,4) over-smooths when the train set is only 80 samples.
+
+The mixup-knob exploration is exhausted. P4 remains the best attainable configuration in the (mixup strength × wd × noise) subspace.
+
+**But the real bottleneck revealed by P6:** across all six pilots, **no configuration produces a flat plateau**. Val rises continuously from ep 100 in every run. Textbook grokking requires memorization-first dynamics with a phase gap before generalization; this network is generalizing gradually from the first step because it is too over-parameterized for the task. With arch=[200,100,70] ≈ 30,000 params on 80 samples, the model has ~375 params/sample, far enough into the over-parameterized regime that partial generalization emerges alongside memorization rather than after it. Further knob-tuning inside this architecture cannot produce a plateau — the plateau requires a model small enough that memorization is genuinely hard.
 
 **How to apply.** Forbidden knobs and combinations (all disproven by pilots above):
 - wd=0 combined with mixup → weight-norm explosion (P5)
+- α=4 alone on 80-sample train set → over-smoothing, small val regression (P6)
 - no-mixup + any wd/optimizer → basin-pinning failure (P1–P3)
 - more SGD/Adam/AdamW optimizer shuffling → exhausted (P1–P3)
 - abandoning the EMG dataset for toy tasks → never (see `feedback_emg_dataset_is_load_bearing.md`)
 
-The remaining candidate space for pilots, ranked by expected leverage:
+The remaining candidate space for pilots, re-ranked after P6 — now focused on **forcing a memorization-first phase** via capacity/noise/data levers, not mixup tuning:
 
-1. **P4 baseline + α alone** (α=4, **wd=0.01 kept**, noise=0.25 kept, rest = P4). Isolates the mixup-strength knob. If α=4 with wd in place produces val > 0.58 or clean_tr > 0.7625, the path forward is stronger mixup. If it produces the same val ~0.55 band, the α knob is saturated. **This is the single cleanest next experiment — run it first.** Zero risk of weight-norm blowup because wd is still in place.
-2. **P4 baseline + α=2** (milder). Finer exploration of the mixup-strength curve if α=4 ends up too strong/weak.
-3. **P4 baseline + noise alone** (wd=0.01, α=1, noise=0.35). Isolates the noise knob. P5's noise change was confounded with wd=0 and α=4 so we don't yet know if higher noise hurts P4 or helps it.
-4. **P4 baseline + wd slightly higher** (wd=0.02–0.05, α=1, noise=0.25). If wd is load-bearing, slightly more of it may widen the cooperation zone between mixup and wd.
-5. **P4 baseline + different seeds** (seed ∈ {42, 123, 256, 420}). Establishes whether val 0.58 is reproducible or seed-lucky. seed=100 was the cleanest Shape-A drifter in the main sweep so there's a real risk of seed dependency. Worth 2–3 runs before committing to more knob tuning.
-6. **Input Gaussian noise added to P4** (via `GaussianNoise` layer at input in `build_grok_model`). Stacks a second between-sample perturbation on top of mixup. Cheap code change.
-7. **Manifold mixup** (mixup at the first hidden layer instead of the input). More code (custom train_step), potentially stronger mechanism since hidden representations are more structured. Moderate leverage, higher implementation cost.
-8. **Bump train_subset to 120 or 160** — if mixup needs same-class neighbors to outvote flipped basins, more samples per class helps. Trade: dilutes the small-data grokking premise.
+1. **P4 baseline with shrunk arch [64, 32]** (wd=0.01, α=1, noise=0.25, SGD+momentum, lr=0.01, batch=16). New dedicated constant `GROKKING_PILOT_ARCH` separates pilot arch from sweep arch. ~2.5k params for 80 samples (~31 params/sample) is ~12× tighter, should force the network to actually struggle to memorize and create the flat-plateau phase separation that every prior pilot lacked. **This is the single most important experiment — it tests the real diagnosis from P6.**
+2. **P4 baseline + noise=0.40** (wd=0.01, α=1, orig arch). Push memorization harder to lengthen the pre-generalization phase. Cheaper than (1) if arch shrink is too aggressive.
+3. **P4 baseline + train_subset=200** (wd=0.01, α=1, noise=0.40). More data → longer memorization → possible plateau. Dilutes the small-data grokking story slightly.
+4. **P4 baseline + lr=3e-3** (10× slower). Stretches all training phases; may expose a hidden phase separation that's happening too fast to see at lr=0.01.
+5. **Manifold mixup** at first hidden layer. Different regularizer surface; may behave differently without the Beta(4,4) over-smoothing failure mode.
+6. **Dropout 0.3** instead of mixup, with wd=0.01 + noise=0.25. Alternative regularizer on the same diagnosis.
+7. **P4 baseline + α=2** (finer mixup-strength test). Low priority now — α saturated.
+8. **P4 baseline + different seeds**. Reproducibility check; worth doing before any results are reported externally.
 
-The highest-leverage single next step is **option 1** (P4 baseline + α=4 alone). Directly tests whether the α=1→4 regression in P5 was α-attributable or wd-attributable. No risk of weight-norm blowup.
+The highest-leverage single next step is **option 1** (shrink arch to [64, 32]). Addresses the actual failure mode — over-parameterization — rather than tuning knobs inside an architecture that can't produce a plateau no matter what.
 
-**Headline if asked about results in one sentence:** "Five pilots: P4 (SGD + mixup α=1 + wd=0.01) is still the best at val 0.58 sustained. P5 tried to combine three aggressive knobs (α=4, wd=0, noise=0.35) and regressed to val 0.40 with weight norm exploding 16→100 — wd=0 removed the magnitude cap and the network escaped mixup by inflating weights. wd is load-bearing when using mixup; the next experiment should be P4 baseline with α=4 alone."
+**Headline if asked about results in one sentence:** "Six pilots: P4 (SGD + mixup α=1 + wd=0.01) is still the best at val 0.58 sustained. P6 tested α=4 alone (wd/noise kept at P4 values) and got a small regression to val ~0.53 — α knob is saturated at α=1. But the real diagnosis from P6 is that NO pilot shows a flat plateau, because arch=[200,100,70] is over-parameterized for 80 samples. Next: shrink arch to [64, 32] via new `GROKKING_PILOT_ARCH` constant."
