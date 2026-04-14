@@ -1,33 +1,49 @@
 ---
-name: label-noise grokking pilot — negative result (anti-grokking decay)
-description: 1-hour single-config grokking pilot on EMG with 25% label noise produced NO grokking — clean-label train acc stuck at 0.75 entire run, val acc peaks at 0.404 right after memorization and monotonically decays to 0.385 over 80k epochs
+name: label-noise grokking pilots — two negative results, geometric basin failure
+description: Two label-noise grokking pilots on EMG (wd=0.5/40s/25%n and wd=0.1/80s/30%n) both produced NO grokking — clean_tr_acc pinned at (n−flipped)/n entire run in both. Two failure modes (post-memorization decay vs flat plateau) bracket the wd range; flipped-label basin is geometrically unejectable by any wd we've tried.
 type: project
 ---
 
-Pilot config (stored in `myo_utils.GROKKING_PILOT_*`, executed via `run_grok_pilot` in `grokking.py`, notebook cells 32–33):
-arch=[200,100,70], lr=1e-4, wd=0.5, epochs=80,000, train_subset=40, label_noise=0.25 (10/40 labels flipped), val_subset=8000, seed=42, subsample_seed=43, rms_window=30, full-batch AdamW, `clean_train_data` tracked against original (unflipped) labels. Wall time 54m 42s.
+Two label-noise grokking pilots have been run via `run_grok_pilot` in `grokking.py` (notebook cells 32–33). Both are negative results, but in **different ways**, and together they bracket the failure mode.
 
-**Result: no grokking, the opposite of grokking.**
+Shared infrastructure: arch=[200,100,70], full-batch AdamW, val_subset=8000, rms_window=30, log_every=100, `clean_train_data` tracks the unflipped labels via `GrokLoggingCallback`. Code in `myo_utils.apply_label_noise`, `grokking.run_grok_pilot`, `grokking.plot_grok_pilot`. Per-pilot config lives in `myo_utils.GROKKING_PILOT_*` constants.
 
-Trajectory (from the 800 logged epochs in the notebook output):
-- Memorization fast: `train_acc` (on noisy labels) hits 1.0 at **epoch 3100** and stays there.
-- `clean_tr_acc` climbs to **0.75 = 30/40 by epoch 1300** and is **pinned there for the entire remaining 78,700 epochs**. The 10 flipped labels are memorized as their flipped targets; the network never "un-memorizes" them. There is no late lift-off, no grok moment, not even a wiggle — `cl` is literally constant at 0.75 for every single logged epoch from ~1.3k onward.
-- `val_acc` **peaks at 0.404 at epoch 5700**, immediately after memorization, then **monotonically decays** through the rest of training: 0.400 @ 5k → 0.399 @ 10k → 0.390 @ 20k → 0.385 @ 30k → 0.384 @ 40k → 0.383 @ 50k → 0.382 @ 60k-65k (minimum 0.3815) → slight rebound to **0.3854 @ 80k**. Net change from peak: **−0.019**. Plateau std after epoch 20k is ~0.0003–0.001 — extremely tight, just slowly drifting down.
-- Weight norm rises from ~24 to a peak of **32.03 around epoch 20k**, then wd-driven compression pulls it steadily down to **24.86 by ep 80k**. The val decay tracks the weight-norm compression: both fall monotonically from ep 10k to ~65k. (This is the inverse of the main sweep's weak negative correlation — here it's a clean anti-correlation in the late phase: shrinking norm → shrinking val acc.)
+## Pilot 1 — wd=0.5, 40 samples, 25% noise (anti-grokking decay)
+Config: lr=1e-4, wd=0.5, train_subset=40, noise=0.25 (10 flipped), epochs=80,000, seed=42, subsample_seed=43. Wall time 54m 42s.
 
-**Interpretation.** The pilot was designed on Omnigrok logic: add label noise to force a real memorize→generalize gap that weight decay can then close via a phase transition. It failed for a specific, informative reason:
+- Memorization at **ep 3,100** (train→1.0).
+- `clean_tr_acc` reaches **0.75 = 30/40 by ep 1,300** and stays there for the next 78,700 epochs. Literal flat line.
+- `val_acc` peaks at **0.404 @ ep 5,700**, then **monotonically decays** to ~0.382 at ep 50–65k, partial recovery to 0.3854 at ep 80k. Net change from peak: **−0.019**.
+- Weight norm peaks 32 @ ep 20k, **monotonically compresses** to 24.86 @ ep 80k.
+- Val decay tracks wn compression: shrinking norm → shrinking val acc.
 
-1. The flipped-label basin is **stable under this wd**. Once the network memorizes the 10 flipped labels, weight decay is not strong enough to eject it from that basin — `clean_tr_acc` stays exactly at 0.75 for 77k epochs. For grokking to occur you need wd to eventually make the memorization solution inaccessible; here the memorization solution is robust to the chosen wd.
-2. What little generalization exists is a **statistical shortcut** accumulated during the memorization transient (val 0→0.40 over the first 5k epochs tracks the train curve closely). There is no hidden "correct circuit" to grok into — val peaks at 0.404 because that's what the initial memorization-dominated solution gets on 8k held-out samples, and the later wd-driven compression *destroys* rather than reveals structure.
-3. The result is the **mirror image** of the main sweep's Shape A (slow drift up): here it's slow drift **down**, because the starting point after memorization is above, not below, the wd-compressed equilibrium.
+Failure mode: wd is strong enough to compress the network's incidental generalization, but not strong enough to dislodge the flipped-label memorization. Result is mirror image of main-sweep Shape A — slow drift *down* instead of up.
 
-**What to tell the user if they ask about this pilot.** It is a clean negative result. The headline is: "clean_tr_acc pinned at 0.75 the entire run — the flipped labels are memorized forever — and val peaks at 0.404 right after memorization then decays to 0.385, the opposite of grokking." Do not dress it up as partial grokking; the `cl=0.75` flatline is unambiguous.
+## Pilot 2 — wd=0.1, 80 samples, 30% noise (flat plateau, no liftoff)
+Config: lr=3e-4, wd=0.1, train_subset=80, noise=0.30 (24 flipped), epochs=150,000, seed=100, subsample_seed=123. Wall time 1h 52m 09s.
 
-**Why:** this pilot was run in response to "if I wish to show grokking, what next steps would you suggest?" The user agreed to a 1-hour single-config label-noise attempt. The config I picked (wd=0.5, lr=1e-4, 40 samples, 25% noise) did not produce grokking. The negative result is publishable as-is in the notebook, but if the user wants to actually show grokking on this dataset, the next iteration needs different knobs.
+- Memorization at **ep 800** (4× faster than pilot 1, due to higher lr).
+- `clean_tr_acc` reaches **0.70 = 56/80 by ep 700** and stays there for 149,300 epochs. Same flat-line failure.
+- `val_acc` hits **all-time max 0.4679 at ep 800** — exactly at memorization. Then sits in a 0.434–0.456 band for the rest of training.
+- Post-memorization mean ≈ **0.448**. Final val = **0.4487**. **Net drift after memorization: +0.0007 over 149k epochs.** Effectively zero.
+- Weight norm **oscillates** 29–38 with no monotone trend, quasi-period ~25–30k epochs (matches main-sweep wn cycle period).
+- Val oscillates ±0.01 inversely with wn (high wn → val dips to 0.43, low wn → val recovers to 0.455). This is **breathing**, not generalization.
 
-**How to apply:** if the user wants to retry:
-- The first thing to test is **higher label noise (0.4–0.6)** — with 25% noise, the memorization solution still has enough signal overlap with the true labels to give val 0.40 immediately, so there's no plateau to escape. Higher noise widens the gap.
-- Second lever: **much stronger wd (1.0–2.0)** or **larger model** — wd=0.5 was not enough to eject from the flipped-label basin. Either make the basin smaller (more wd) or make the generalization basin more attractive (more params).
-- Third lever: **lr decay / cosine schedule**, or **AdamW → SGD+momentum** — Omnigrok grokking often needs SGD-style dynamics, not Adam's per-parameter adaptation, to get the sharp phase transition.
-- Do NOT interpret "val peaks early then decays" as "partial grokking running backward" — it's just the wd compression schedule revealing the memorization solution is fragile under decay. Report as a clean negative.
-- The pilot helper infrastructure (`apply_label_noise`, `GrokLoggingCallback.clean_train_data`, `run_grok_pilot`, `plot_grok_pilot`) is reusable — only the `GROKKING_PILOT_*` constants need to change for the next iteration. Encourage parameter changes via those constants rather than code edits.
+Failure mode: weak wd preserves the memorization solution's incidental generalization (val ceiling 0.45 vs pilot 1's 0.39), giving a much cleaner Omnigrok-style plateau — narrow std, persistent for 149k epochs — but the flipped-label basin is *still* unejectable, and the plateau just sits there with no late lift-off.
+
+## Joint conclusion
+
+The two pilots together demonstrate: **at no wd in the tested range (0.1 → 0.5) does weight decay eject the memorized flipped labels on this 8-channel EMG dataset.** wd=0.1 preserves more, wd=0.5 destroys more, but `clean_tr_acc` is pinned at exactly (n−flipped)/n in both cases for the entire run. The failure isn't a wd tuning issue — it's geometric. With only 8-D real-valued features and ~10 samples/class, each flipped sample becomes a small isolated basin in feature space that wd doesn't have leverage on (wd shrinks all weights uniformly, but those local memorization basins are stable under uniform shrinkage as long as the network has any capacity at all).
+
+Pilot 2 is the closest thing to a *true Omnigrok plateau* this dataset has produced — flat, narrow std, 149k epochs long. It's the right shape for grokking to emerge from. It just doesn't emerge under AdamW + wd alone.
+
+**Why:** the user explicitly asked for two single-config grokking pilots ("yes, lets do a 1 hour single configuration", then iterated hyperparams toward the main-sweep wd/lr region with my edits). Both failed. The user has been honest about wanting to see grokking and willing to spend wall time on it, so the right next step is to suggest changes that have a *mechanical* reason to break the geometric basin issue, not more wd tuning.
+
+**How to apply:** if asked "what next?", do not propose more wd values, more noise levels, or more seeds — those have been bracketed and the failure is geometric. The remaining levers, ranked by leverage:
+
+1. **Mini-batch SGD+momentum** (batch≈8, lr~0.01, momentum 0.9). Two reasons: (a) stochastic gradient noise can perturb the network out of single-sample memorization basins where uniform wd shrinkage cannot, (b) most published Omnigrok results use SGD-style updates, not Adam's per-parameter adaptation. This is the **single biggest change** and the most likely to actually work. Requires modifying `run_grok_pilot` to swap the optimizer (currently hardcoded to AdamW via `build_grok_model`).
+2. **Input noise / mixup during training** — prevents the network from carving sharp single-sample basins around flipped points to begin with. No optimizer change.
+3. **Algorithmic toy task** (modular arithmetic, parity) — abandons EMG. Safest path to a textbook grokking figure but it's a different project. The dataset issue is real: 8-D real-valued EMG features with ~10 samples/class doesn't have a hidden "right circuit" the way modular arithmetic does.
+4. Do NOT recommend bumping noise to 0.4–0.6 alone, or more wd, or more epochs. Pilots 1 and 2 jointly rule this out.
+
+**Headline if asked about results in one sentence:** "Two pilots, two negative results — pilot 1 decayed post-memorization, pilot 2 produced a clean 149k-epoch plateau that never lifted off. In both, all flipped labels were memorized forever (clean_tr_acc pinned at (n−flipped)/n the entire run). Failure is geometric, not a wd tuning issue."
