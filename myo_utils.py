@@ -27,15 +27,17 @@ GROKKING_SEEDS = [100, 123, 256, 420, 789]
 GROKKING_VAL_SUBSET = 8_000
 GROKKING_LOG_EVERY = 100
 # Pilot: single-run grokking experiment with label noise to widen the memorize->generalize gap.
-# Rationale: the main sweep found only delayed-generalization drift because val sits at ~0.55
-# immediately after memorization (no near-chance plateau to escape). Label noise forces the
-# network to memorize wrong targets, which blocks statistical shortcuts and creates a real
-# plateau to grok out of.
+# Rationale: main sweep (wd=0.1, lr=3e-4, no noise) produced delayed-generalization drift but
+# no textbook grokking because val sits at ~0.55 immediately after memorization — no real
+# plateau to escape. First pilot (wd=0.5, lr=1e-4, 40 samples, 25% noise) over-compressed:
+# val decayed post-memorization. This pilot reverts wd/lr to main-sweep territory and adds
+# 30% label noise to suppress the immediate memorization shortcut, hoping to produce a real
+# plateau the proven drift config can then climb out of.
 GROKKING_PILOT_TRAIN_SUBSET = 80
-GROKKING_PILOT_LABEL_NOISE = 0.25
+GROKKING_PILOT_LABEL_NOISE = 0.30
 GROKKING_PILOT_WD = 0.1
 GROKKING_PILOT_LR = 3e-4
-GROKKING_PILOT_EPOCHS = 300_000
+GROKKING_PILOT_EPOCHS = 150_000
 GROKKING_PILOT_SEED = 100
 GROKKING_PILOT_LOG_EVERY = 100
 GROKKING_PILOT_SUBSAMPLE_SEED = 123
