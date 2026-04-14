@@ -35,17 +35,17 @@ GROKKING_LOG_EVERY = 100
 # adds *between-sample* perturbation via mixup: each training example is linearly blended with
 # another sample in the same minibatch, so the basin around a flipped point must compete with
 # the nearby clean samples that are now constantly being averaged into it.
-GROKKING_PILOT_ARCH = [64, 32]  # shrunk from [200,100,70] — ~375 params/sample was over-parameterized
-GROKKING_PILOT_OPTIMIZER = "sgd"  # "adamw" or "sgd"
+GROKKING_PILOT_ARCH = [200, 100, 70]  # P8: reverted from [64,32]; P7 showed arch shrink changed nothing
+GROKKING_PILOT_OPTIMIZER = "adamw"  # P8: back to AdamW (P2's plateau mechanic)
 GROKKING_PILOT_MOMENTUM = 0.9
 GROKKING_PILOT_NESTEROV = True
-GROKKING_PILOT_BATCH_SIZE = 16  # set to None for full-batch
-GROKKING_PILOT_MIXUP_ALPHA = 4.0  # Beta(alpha, alpha) mixing strength; 0 disables mixup
+GROKKING_PILOT_BATCH_SIZE = None  # P8: full-batch (matches P2, cleaner dynamics)
+GROKKING_PILOT_MIXUP_ALPHA = 0.0  # P8: mixup disabled — we're chasing plateau shape, not ceiling
 GROKKING_PILOT_TRAIN_SUBSET = 80
-GROKKING_PILOT_LABEL_NOISE = 0.25
-GROKKING_PILOT_WD = 0.01
-GROKKING_PILOT_LR = 0.01
-GROKKING_PILOT_EPOCHS = 100_000
+GROKKING_PILOT_LABEL_NOISE = 0.30  # P8: P2's value
+GROKKING_PILOT_WD = 0.15  # P8: bumped from P2's 0.1 — accelerate expected liftoff time
+GROKKING_PILOT_LR = 3e-4  # P8: P2's lr
+GROKKING_PILOT_EPOCHS = 500_000  # P8: 3.3× P2's 150k, targeting Power-et-al grokking timescales
 GROKKING_PILOT_SEED = 100
 GROKKING_PILOT_LOG_EVERY = 100
 GROKKING_PILOT_SUBSAMPLE_SEED = 123
