@@ -35,20 +35,20 @@ GROKKING_LOG_EVERY = 100
 # adds *between-sample* perturbation via mixup: each training example is linearly blended with
 # another sample in the same minibatch, so the basin around a flipped point must compete with
 # the nearby clean samples that are now constantly being averaged into it.
-GROKKING_PILOT_ARCH = [200, 100, 70]  # P8: reverted from [64,32]; P7 showed arch shrink changed nothing
-GROKKING_PILOT_OPTIMIZER = "adamw"  # P8: back to AdamW (P2's plateau mechanic)
-GROKKING_PILOT_MOMENTUM = 0.9
-GROKKING_PILOT_NESTEROV = True
-GROKKING_PILOT_BATCH_SIZE = None  # P8: full-batch (matches P2, cleaner dynamics)
-GROKKING_PILOT_MIXUP_ALPHA = 0.0  # P8: mixup disabled — we're chasing plateau shape, not ceiling
-GROKKING_PILOT_TRAIN_SUBSET = 80
-GROKKING_PILOT_LABEL_NOISE = 0.30  # P8: P2's value
-GROKKING_PILOT_WD = 0.15  # P8: bumped from P2's 0.1 — accelerate expected liftoff time
-GROKKING_PILOT_LR = 3e-4  # P8: P2's lr
-GROKKING_PILOT_EPOCHS = 500_000  # P8: 3.3× P2's 150k, targeting Power-et-al grokking timescales
-GROKKING_PILOT_SEED = 100
+GROKKING_PILOT_ARCH = [200, 100, 70]  # P8: sweep Run 1 arch
+GROKKING_PILOT_OPTIMIZER = "adamw"  # P8: sweep Run 1 optimizer
+GROKKING_PILOT_MOMENTUM = 0.9  # unused for adamw
+GROKKING_PILOT_NESTEROV = True  # unused for adamw
+GROKKING_PILOT_BATCH_SIZE = None  # P8: full-batch (sweep Run 1)
+GROKKING_PILOT_MIXUP_ALPHA = 0.0  # P8: no mixup — pure wd-driven drift
+GROKKING_PILOT_TRAIN_SUBSET = 100  # P8: sweep Run 1 n (not P2's 80)
+GROKKING_PILOT_LABEL_NOISE = 0.0  # P8: KEY CHANGE — clean labels, like sweep Run 1; noise was poisoning EMG grokking
+GROKKING_PILOT_WD = 0.09  # P8: sweep Run 1 wd (the best shape-A drifter)
+GROKKING_PILOT_LR = 3e-4  # P8: sweep Run 1 lr
+GROKKING_PILOT_EPOCHS = 1_200_000  # P8: 12× sweep Run 1's 100k, ~15h wall — extends the only regime that showed delayed-gen drift
+GROKKING_PILOT_SEED = 100  # P8: sweep Run 1 seed (best shape-A drifter)
 GROKKING_PILOT_LOG_EVERY = 100
-GROKKING_PILOT_SUBSAMPLE_SEED = 123
+GROKKING_PILOT_SUBSAMPLE_SEED = 42  # P8: sweep uses seed=42 for subsample_data; match exactly
 CURATION_ACCURACY_THRESHOLD = 0.7
 FIGURE_SIZE = (20, 5)
 FIGURE_DPI = 200  # 2× Matplotlib default (100) for sharper display and exports

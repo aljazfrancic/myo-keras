@@ -1,6 +1,6 @@
 ---
-name: label-noise grokking pilots — P4 still best; arch capacity is NOT the bottleneck; EMG may be intrinsically smooth enough that flat plateau is unreachable via SGD/mixup/arch knobs
-description: Seven grokking pilots on EMG. P1–P3 (no mixup): clean_tr pinned, val ≤0.47. P4 (SGD+mixup α=1+wd=0.01) best: val 0.58 sustained. P5 (α=4+wd=0+noise=0.35) regressed to 0.40 via weight-norm explosion. P6 (P4+α=4 alone) val ~0.53 — α saturated. P7 ([64,32]+α=4+wd=0.01+noise=0.25) val ~0.55 peak, **identical qualitative shape to P6 despite 12× capacity reduction** — disproves P6's over-parameterization diagnosis. Real diagnosis: EMG is a smooth-signal task where partial generalization emerges from step 1 regardless of net size; only full-batch AdamW with moderate wd (P2) ever produced a plateau. Next: extend P2 with bumped wd and 500k epochs (P8 overnight run).
+name: label-noise grokking pilots — P4 still best among noise pilots; P8 revised to drop label noise entirely (sweep Run 1 extended to 1.2M steps)
+description: Seven label-noise pilots. P4 (SGD+mixup α=1+wd=0.01) best at val 0.58. Noise-based pilots P1–P7 all failed to produce delayed-generalization liftoff shape. KEY REVISION for P8: the CLEAN-label sweep (Run 1: wd=0.09+noise=0) already showed grokking-adjacent drift (+0.041 over 100k), while P2 (same config + noise=0.30) showed ZERO drift. Label noise was poisoning EMG grokking, not enabling it (EMG is smooth-manifold, not rigid-structure — Omnigrok's noise recipe is the wrong framework). P8 revised: exact-reproduce sweep Run 1 and extend 12× to 1.2M full-batch steps (~15h wall). Tests whether the +0.041 clean-label drift continues into a larger delayed climb.
 type: project
 ---
 
@@ -130,29 +130,49 @@ P1–P3 jointly showed that **per-weight (wd) and per-step (SGD batch noise) per
 
 **Revised bottleneck diagnosis.** The obstacle to textbook grokking on EMG is not capacity, not optimizer, not mixup strength, and not label noise — it is **the intrinsic smoothness of the task**. EMG RMS features live on a smooth manifold; nearest-neighbor and low-complexity boundaries give substantial val from the first gradient step. Power-et-al style grokking requires a task where val stays at chance until a rigid structure is discovered (modular arithmetic, parity). On EMG, partial generalization is the trivial solution. The only pilot that produced a flat plateau (P2) did so by reaching a regularized fixed point pinned at val 0.45 with std <0.01 — and that plateau had **no liftoff signal in 149k epochs**.
 
-**Path to textbook grokking, if reachable at all:** extend the P2 plateau regime to the 10^5–10^6 step timescale that Power et al grokking transitions typically occur at, and bump wd slightly to accelerate the expected liftoff time. P2 was 150k steps at wd=0.1; running 3–5× longer at wd=0.15–0.2 is the cheapest untried test of "is P2 on a plateau that would lift off given enough time". If 500k steps still shows zero drift, wd alone cannot produce grokking on this data and the project should pivot to reporting "stable regularized plateau with no late generalization" as the honest result.
+**P8 rethink — label noise is probably the wrong framework for EMG.** Seven label-noise pilots have been run and none produced grokking shape. But the ORIGINAL 15-run CLEAN-label sweep (see `project_grokking_sweep_results.md`) produced grokking-adjacent shapes in multiple runs:
+- Run 1 (wd=0.09, seed=100, n=100, noise=0, 100k epochs): flat plateau 0.555 from ep 5k–30k (std 0.0015), then **delayed monotone climb to 0.596 by ep 100k**, +0.041 shift, no dip. Cleanest shape-A drifter in the sweep.
+- Run 7 (wd=0.10, seed=123): dip-and-rebound with sharp +0.042 rise in 10k window (ep 41k–51k).
+
+**Single-variable comparison P2 vs sweep Run 1:** both AdamW/lr=3e-4/arch=[200,100,70]/full-batch/~100 samples, but P2 added 30% label noise. Result: sweep Run 1 showed +0.041 drift; P2 showed +0.0007 drift. **Label noise killed the drift that clean labels produced.**
+
+**Why:** Omnigrok's label-noise recipe assumes rigid-structure tasks (mod arithmetic, parity) where flipped labels create a real memorize-generalize gap because no smooth interpolant explains the noise. On EMG — a smooth continuous-signal manifold task — flipped labels create a *permanent memorization floor* instead (the optimum is the memorize-the-noise solution, and there's no generalizing basin to drift into). Omnigrok is the wrong framework for this task. Seven pilots of label noise were exploring a dead end.
+
+**Path to textbook grokking, if reachable at all:** return to the clean-label regime (sweep Run 1) and extend to 10^5–10^6 step timescale. The sweep showed real delayed-generalization drift in 100k steps; extending 12× tests whether the drift continues into a visible grokking-adjacent shape or saturates.
 
 **How to apply.** Forbidden knobs and combinations (all disproven by pilots above):
 - wd=0 combined with mixup → weight-norm explosion (P5)
 - α=4 alone on 80-sample train set → over-smoothing, small val regression (P6)
 - shrinking arch alone (while keeping mixup + SGD mini-batch) → no plateau emerges (P7)
-- no-mixup + weak wd + any optimizer → basin-pinning failure (P1–P3)
-- more SGD/Adam/AdamW optimizer shuffling → exhausted (P1–P3)
+- no-mixup + label noise + any wd/optimizer → plateau without liftoff (P1–P3 + P2 at 150k steps)
+- Omnigrok label-noise framework → wrong for smooth-signal tasks (disproven by comparing P2 vs sweep Run 1: noise killed the drift that clean labels produced)
 - abandoning the EMG dataset for toy tasks → never (see `feedback_emg_dataset_is_load_bearing.md`)
 
-The one remaining untried lever is **timescale**. P2 showed a clean flat plateau at 150k steps with zero liftoff signal. Power et al grokking transitions commonly occur at 10^5–10^6 optimizer steps. Extending P2 to ~5×10^5 steps is the only untried experiment that could answer "does wd-based grokking exist on this data or not". All other candidates (mixup tuning, arch shrinks, optimizer changes) have been ruled out by the seven pilots so far.
+**P8 — the overnight run (REVISED after rethinking from all evidence).** Exact-reproduce sweep Run 1 and extend from 100k → 1.2M full-batch steps. The single highest-info experiment we can run given every pilot and sweep result on file:
+- optimizer = adamw, lr = 3e-4
+- wd = **0.09** (sweep Run 1 value — cleanest shape-A drifter in the original 15-run sweep)
+- arch = [200, 100, 70] (sweep Run 1 arch)
+- batch_size = None (full-batch, sweep Run 1)
+- train_subset = **100** (sweep Run 1 n, NOT P2's 80)
+- label_noise = **0.0** (KEY CHANGE — clean labels, like sweep Run 1; seven pilots of noise were a dead end)
+- mixup_alpha = 0 (no confound)
+- epochs = **1,200,000** (12× sweep Run 1's 100k, ~15h wall)
+- seed = 100, subsample_seed = **42** (matches sweep Run 1 exactly — pilot's usual 123 would change the training subsample)
 
-**P8 — the overnight run.** Target: extend P2 to ~500k full-batch steps with slightly bumped wd, no mixup, arch reverted to [200,100,70]. Config:
-- optimizer = adamw, lr = 3e-4, wd = **0.15** (bumped from P2's 0.1 — pushes toward faster liftoff; still below P1's 0.5 decay regime)
-- arch = [200, 100, 70] (restore from P7's [64,32] — arch wasn't the bottleneck)
-- batch_size = None (full-batch, matching P2)
-- train_subset = 80, label_noise = 0.30 (matching P2)
-- mixup_alpha = 0 (disabled — mixup destroys plateau shape, and we're chasing plateau-with-liftoff)
-- epochs = 500,000 (3.3× P2's 150k; Power et al timescale)
-- seed = 100, subsample_seed = 123
+Expected wall time: ~14.8h at sweep rate (sweep averaged ~74 min per 100k full-batch run; 12× = ~14.8h). Fits overnight window with buffer.
 
-Expected wall time: ~6–7h at P2's rate (22 steps/sec full-batch). Fits in an 8h overnight window with buffer.
+**Shape expectations** (ranked by likelihood):
+1. **Realistic — partial positive**: flat plateau 0.555 holds through ep 30k (as in sweep Run 1), drift continues to ~0.60–0.62 by ep 200k–500k, then saturates and flatlines through ep 1.2M. Final curve = cleanest delayed-generalization shape this project can produce. ~+0.05–0.07 total shift with a visible plateau→climb structure.
+2. **Best case — bigger climb**: drift continues past 0.60 and reaches 0.63–0.65 by ep 500k–1M before flattening. Closer to textbook grokking shape even if not a sharp vertical edge.
+3. **Null**: Run 1's 100k drift was a 100k-specific artifact; val stays in 0.58–0.60 band. Would definitively tell us clean-label EMG has no deeper grokking to find at this sample size / arch.
 
-Success shape: val pinned at ~0.45 for some extended initial plateau, then a sharp vertical liftoff in the later epochs. Failure shape: val drifts slightly up or down around 0.45 for the whole 500k and never lifts — which would be a clean negative result ("wd-driven grokking is not reachable on EMG at these timescales") and would justify reporting P4 as the best-achievable partial-positive result and stopping.
+**What this rules in/out:**
+- Rules in: whether the wd-driven delayed-generalization drift in the sweep continues past 100k, and what the ceiling is.
+- Rules out (if null): that this arch/sample-size regime has more grokking to give. Would justify pivoting to different regimes (smaller n, different wd) or accepting sweep Run 1 as the best-obtainable shape.
 
-**Headline if asked about results in one sentence:** "Seven pilots: P4 (SGD + mixup α=1 + wd=0.01) is still the best at val 0.58 sustained. P7 shrunk arch from [200,100,70] to [64,32] and got the same qualitative shape as P6 — disproves the over-parameterization diagnosis. Revised understanding: EMG is a smooth-signal task where val rises from step 1 regardless of net size; only P2 (full-batch AdamW+wd) ever produced a flat plateau, and its 150k-step no-liftoff result may just be a timescale issue. P8 overnight: extend P2 to 500k steps at wd=0.15 to test whether Power-et-al-timescale liftoff exists on this data."
+**Why this beats the earlier P8 proposal** (extend P2 with noise=0.30, wd=0.15):
+- P2 showed **zero** drift signal in 150k steps. Extending a zero-drift run is betting on a change we have no evidence to expect.
+- Sweep Run 1 showed **positive** drift signal in 100k steps. Extending a positive-drift run extrapolates from real evidence.
+- The clean-vs-noisy comparison (P2 vs Run 1 differ only in label noise) strongly implicates noise as the drift killer. Removing it is the highest-leverage single change in our entire experimental history.
+
+**Headline if asked about results in one sentence:** "Seven label-noise pilots exhausted; none produced grokking shape. Key rethink: the CLEAN-label sweep Run 1 (wd=0.09, n=100, no noise) already showed +0.041 delayed-generalization drift over 100k epochs — P2 (same config + label noise) showed zero drift. Label noise was poisoning EMG grokking because EMG is smooth-manifold, not rigid-structure. P8 overnight: exact-reproduce sweep Run 1 and extend 12× to 1.2M full-batch steps (~15h) to test whether the drift continues past 100k into a visible delayed-generalization shape."
