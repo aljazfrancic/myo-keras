@@ -1,6 +1,6 @@
 ---
-name: label-noise grokking pilots — P4 still best among noise pilots; P8 revised to drop label noise entirely (sweep Run 1 extended to 1.2M steps)
-description: Seven label-noise pilots. P4 (SGD+mixup α=1+wd=0.01) best at val 0.58. Noise-based pilots P1–P7 all failed to produce delayed-generalization liftoff shape. KEY REVISION for P8: the CLEAN-label sweep (Run 1: wd=0.09+noise=0) already showed grokking-adjacent drift (+0.041 over 100k), while P2 (same config + noise=0.30) showed ZERO drift. Label noise was poisoning EMG grokking, not enabling it (EMG is smooth-manifold, not rigid-structure — Omnigrok's noise recipe is the wrong framework). P8 revised: exact-reproduce sweep Run 1 and extend 12× to 1.2M full-batch steps (~15h wall). Tests whether the +0.041 clean-label drift continues into a larger delayed climb.
+name: label-noise grokking pilots — P4 still best; P8 (clean-label 1.2M-step sweep Run 1 extension) confirms weak delayed drift saturates at val ~0.59 ceiling
+description: Eight pilots. P4 (SGD+mixup+noise, 100k) still best at val 0.58. Seven label-noise pilots P1–P7 explored a dead end (EMG is smooth-manifold, not rigid-structure). P8 removed label noise and extended sweep Run 1 to 1.2M full-batch steps (14h wall): delayed-generalization drift exists (+0.048 from post-mem floor) but saturates around ep 500k–700k with all-time peak val 0.5901 @ ep 548.4k; final val 0.5696 (slightly below P4). Early memorization transient had val peak 0.5845 @ ep 400 — the entire 1.2M of post-mem drift only recovered +0.006 above that. Textbook vertical-edge grokking is NOT reachable on EMG via timescale alone.
 type: project
 ---
 
@@ -147,6 +147,52 @@ P1–P3 jointly showed that **per-weight (wd) and per-step (SGD batch noise) per
 - no-mixup + label noise + any wd/optimizer → plateau without liftoff (P1–P3 + P2 at 150k steps)
 - Omnigrok label-noise framework → wrong for smooth-signal tasks (disproven by comparing P2 vs sweep Run 1: noise killed the drift that clean labels produced)
 - abandoning the EMG dataset for toy tasks → never (see `feedback_emg_dataset_is_load_bearing.md`)
+
+## Pilot 8 — clean-label extended sweep Run 1 (AdamW, wd=0.09, n=100, noise=0, 1.2M full-batch steps)
+Config: optimizer=adamw, lr=3e-4, wd=0.09, arch=[200,100,70], batch_size=None (full-batch, 1 step/epoch), train_subset=100, label_noise=0.0, mixup_alpha=0, epochs=1,200,000, seed=100, subsample_seed=42. Wall time **14h 09m 06s** (14.15h — just under the 14.8h estimate).
+
+This was the post-rethink overnight run. Hypothesis: the clean-label sweep Run 1 (100k epochs) had already shown grokking-adjacent +0.041 delayed-generalization drift; seven label-noise pilots were a dead end; the single highest-information experiment was to exact-reproduce Run 1 and extend 12× to the 10^6 step scale where Power et al grokking transitions most commonly appear.
+
+**Result: partial positive on "does delayed drift extend past 100k"; negative on "textbook vertical-edge grokking is reachable on EMG".**
+
+**Five-phase trajectory:**
+1. **Pre-memorization rise (ep 100–500).** Val climbs 0.4705 → **0.5845 @ ep 400** (train_acc only 0.81, clean_tr 0.81). Weight norm 16.5 → 21.9. Early peak happens DURING the memorization transient, before train hits 1.0.
+2. **Post-memorization dip (ep 500–5000).** Train_acc hits 1.0 by ep 2000. Val drops from 0.58 → 0.5314 @ ep 5000. Memorization settles in and temporarily overfits away from the good pre-memorization solution. Weight norm reaches ~35.8.
+3. **Slow drift recovery (ep 5k–500k).** Val climbs monotonically (smoothed) from 0.531 → 0.578 over 495k epochs. **+0.047 drift** — this IS the delayed-generalization phase. Weight norm oscillates 33–40 (no monotone compression, matches sweep's "breathing" quasi-period).
+4. **Peak band (ep 500k–700k).** Val 0.57–0.59 band, **all-time max val 0.5901 @ ep 548,400**. Ep 500k–600k window mean ≈ 0.581. This is the best post-memorization generalization the network achieves.
+5. **Saturation + slow decay (ep 700k–1.2M).** Drift stops, val settles to 0.568–0.575 band. **Final val 0.5696 @ ep 1,200,000.** Net decay from ep 600k peak: ~−0.02.
+
+**Key numerical observations:**
+- **All-time max val**: 0.5901 @ ep 548,400 (post-mem peak). Barely crosses 0.59.
+- **Pre-memorization peak**: 0.5845 @ ep 400. **The entire 548k epochs of delayed generalization only added +0.0056 above what the network already had during memorization.**
+- **Post-mem floor → peak drift**: +0.047 (from 0.531 @ ep 5k to 0.5782 @ ep 500k). Comparable in magnitude to sweep Run 1's +0.041 over 100k, but stretched 5× longer.
+- **Weight norm**: oscillates 33–40 the whole 1.2M, no monotone compression. Memorization happens fast (ep 2000); wn never collapses into a "grokked" compressed state.
+- **train_acc and clean_tr_acc both pinned at 1.0 from ep 2000 onward.** No noise → no difference between noisy and clean train; network has zero residual training loss to drive further optimization.
+- **P8 final val (0.5696) is BELOW P4's 0.58.** P4 (SGD + mixup α=1 + wd=0.01 + noise=0.25, 100k mini-batch steps) remains the best pilot absolute val across all 8 pilots.
+
+**Interpretation.**
+1. **Delayed-generalization drift is real and does extend past 100k, but it saturates fast.** The 500k-epoch peak is only +0.047 above the post-mem floor, not dramatically more than sweep Run 1's +0.041 at 100k. The sweep's 100k result was NOT a snapshot of an in-progress climb — it was nearly all of the available climb. Extending to 1.2M got us +0.006 of additional peak val and then reversed.
+2. **Saturation at ~500k–700k confirmed.** 1.2M was ~2× overkill. Next time run to ~600k-700k for peak val, or ~1M to confirm saturation.
+3. **The early memorization transient contains the best solution.** Val peak 0.5845 @ ep 400 (pre-memorization) ≈ post-memorization peak 0.5901. Memorization is almost purely harmful here — it drops val by 0.05 and then spends 500k epochs slowly recovering +0.05 back. **Early stopping at ep 400 would have given almost the same peak val as training for 14 hours.** This is the opposite of textbook grokking, where memorization is prerequisite and generalization comes later.
+4. **No weight-norm compression event.** In Power et al grokking and Omnigrok, the transition is accompanied by sharp weight-norm compression. P8 shows wn oscillating in a stable 33–40 band for 1.2M epochs with no compression event. There is no "sudden simplification" of the solution — the network is just wandering around a stable basin.
+5. **EMG has a hard ceiling around val 0.58–0.59 at n=100 with standard regularization.** Every pilot converges to this band (P4: 0.58, sweep Run 1: 0.596, P8: 0.59). The ceiling is not an optimization issue — it's a fundamental information limit at this sample size and arch.
+
+**What this rules out:**
+- "Textbook grokking on EMG requires just more epochs" — decisively no. 1.2M steps produced the same shape as 100k steps, slightly larger in magnitude.
+- "The sweep Run 1 100k trajectory was a snapshot of an ongoing climb" — no, it was nearly all of the available climb. Saturation happens around 500k.
+- "Weight decay alone can produce Omnigrok-style phase transitions on smooth-signal data" — no. Seven noise-based pilots + P8 clean-label long-run all produced the same delayed-drift shape, never a sharp edge.
+
+**What this rules in:**
+- **Clean-label delayed drift is the correct framework for EMG** (vs Omnigrok noise-based). P8's drift shape (post-mem floor → slow climb → saturation) is exactly the sweep Run 1 shape extended in time.
+- **500k–700k full-batch epochs is the optimal training length** for peak val on this config.
+- **EMG has a real statistical ceiling around 0.58–0.59 at n=100.** P4's 0.58 and P8's 0.59 are within noise of each other despite very different configs; this is the information content of 100 samples with 8 classes, not an optimization failure.
+- **The pre-memorization transient val peak is a hidden best point.** Ep 400 had val 0.5845 at train_acc 0.81. Early stopping at partial memorization would match or beat full training. This could be its own finding: *on smooth-signal tasks, the best generalization happens BEFORE memorization completes*.
+
+**Overall position after P8.** Eight pilots plus a 15-run sweep (23 training runs total) have mapped the reachable val-acc space on this dataset. Best achievable: val 0.58–0.59 with any of several configurations. Best SHAPE: the sweep Run 1 / P8 clean-label delayed-drift shape, OR the P4 mixup sustained-band shape. No configuration produces textbook vertical-edge grokking; the task appears intrinsically smooth-manifold and does not have the rigid-structure bottleneck that produces sharp phase transitions.
+
+**Honest path forward:** accept P8's shape as a real but weak delayed-generalization result and report it, OR pivot to fundamentally different mechanisms (L1 wd for sharper loss landscape, manifold mixup, different activation function, multi-seed averaging for cleaner plots). No single-knob tweak is likely to cross the 0.60 val ceiling given eight failed attempts.
+
+## Joint conclusion (superseded sections below — kept for history)
 
 **P8 — the overnight run (REVISED after rethinking from all evidence).** Exact-reproduce sweep Run 1 and extend from 100k → 1.2M full-batch steps. The single highest-info experiment we can run given every pilot and sweep result on file:
 - optimizer = adamw, lr = 3e-4
