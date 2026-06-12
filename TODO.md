@@ -34,7 +34,7 @@ does.
 
 ---
 
-## ✅ Already tried (23 training runs — none produced a sharp edge)
+## ✅ Already tried (24 training runs — none produced a textbook sharp edge; P9 broke the val ceiling)
 
 ### Master branch — the 15-run AdamW sweep
 - [x] **wd ∈ {0.09, 0.10, 0.11} × 5 seeds**, arch `[200,100,70]`, lr 3e-4, 100k full-batch epochs,
@@ -46,7 +46,7 @@ does.
   - Weight norm rises to ~38–40 by 15k then **oscillates** (no clean compression). Ceiling ~0.61.
   - Measurement lessons from analyzing this sweep are banked in *Analysis discipline* below.
 
-### Pilot branch — 8 mechanism pilots (P1–P8)
+### Pilot branch — 9 mechanism pilots (P1–P9)
 - [x] **P1** — AdamW wd=0.5, n=40, 25% noise → *anti-grokking decay* (val peaks 0.40 then decays).
   wd compresses incidental generalization but can't dislodge flipped-label basins.
 - [x] **P2** — AdamW wd=0.1, n=80, 30% noise → *flat plateau val ~0.45, ZERO liftoff in 149k epochs.*
@@ -66,6 +66,10 @@ does.
   100k but **saturates ~500k–700k**; all-time peak val **0.5901 @ ep 548k**, final 0.5696.
   The entire 1.2M only added **+0.006** over the *pre-memorization* peak (0.5845 @ ep 400).
   No compression event. (See *Banked findings* under the diagnosis for the pre-memorization-peak result.)
+- [x] **P9** — **Omnigrok large-init** (init×5, wd=0.3, lr=1e-4, clean, n=100, 280k full-batch, 6h 31m) →
+  **broke the 0.59 ceiling** (band ~0.602, peak 0.6143) with the **first real weight-norm compression
+  event** (78→28), but **no sharp edge** — val peaks early then declines as wd overshoots the Goldilocks
+  zone (wn≈45–60). Full result + next steps in **Tier 0 → RESULT** below. *Best result to date.*
 
 ### Meta-levers ruled out by the above
 - [x] **Longer timescale** (1.2M steps) — saturates; not the answer.
@@ -125,8 +129,8 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
 ## 🎯 To try next — prioritized by expected leverage
 
 ### Tier 0 — Omnigrok large-norm initialization  ⭐ HEADLINE, do this first
-- [ ] **Scale the initial weights by α ≫ 1 and let weight decay compress the norm down through the
-  "Goldilocks zone."** This is *the* canonical mechanism for inducing grokking on **non-algorithmic
+- [x] **Scale the initial weights by α ≫ 1 and let weight decay compress the norm down through the
+  "Goldilocks zone."** *(P9 done — see RESULT below; follow-ups still open.)* This is *the* canonical mechanism for inducing grokking on **non-algorithmic
   real data** (Liu, Michaud & Tegmark, *Omnigrok*, 2022 — already cited in our README/memory; they
   grok MNIST, IMDb, and molecules this way). It manufactures **all three** missing conditions at once:
   large init → jagged initial function → **memorizes first with val pinned low** (cond. 1) → wd must
@@ -148,14 +152,27 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
   - Cost (measured, this session): **76.6 ms/epoch at log_every=100** (train-bound — evals are ~11%),
     so **~6h ≈ 280k epochs**; at the fine log_every=20 it's ~110 ms/epoch (eval-heavy) → 6h ≈ 195k.
     The 6h epoch ceiling is ~315k even with no evals (the 100-sample full-batch step alone is ~68 ms).
-  - **STATUS: wired, calibrated, LAUNCHING — strongest signal in the project's history.** `init_scale`
-    lever added to `build_grok_model`/`run_grok_pilot`. Two calibration runs (2.5k + 5k epochs at init×5,
-    wd=0.3, lr=1e-4) show, for the first time on this dataset: (a) **val starts at ~0.09 — *below* chance**
-    (large init killed the smooth-manifold shortcut), and (b) **weight norm compresses monotonically**
-    78 → 69 over 5k epochs (no oscillation — the Omnigrok mechanism is actually running). Val reached
-    **0.5915 @ ep 5,000**, already matching P8's all-time peak (0.5901 @ ep 548k) with most of the norm
-    compression still ahead. Full run set to **280k epochs @ log_every=100 (~5.95h)** to test whether val
-    jumps sharply as the norm enters the Goldilocks zone, or saturates near the ~0.59 ceiling like P8.
+  - **RESULT (P9 complete — 280k epochs, 6h 31m): partial success. Ceiling broken; compression event
+    achieved; no textbook edge yet.** First config on this dataset to do all of: **(a) val starts *below
+    chance* (~0.09)** — large init killed the smooth-manifold shortcut; **(b) a real, dramatic weight-norm
+    compression event** — 78 → 28 monotonic (every prior run oscillated 33–40 and never compressed);
+    **(c) broke the 0.59 ceiling** — sustained val band **~0.602 (ep 20–60k)**, single-point peak **0.6143
+    @ ep 12.4k** (vs P8 0.5901 / P4 0.58). **New project best.** BUT **no sharp late edge** (max smoothed
+    post-transient rise +0.0017): val rises *with* memorization (ep 1.5k) to its peak by ep ~12–40k, then
+    **slowly declines to 0.576** as the norm keeps compressing. Post-mem **corr(val, wn) = +0.70** — val is
+    a **unimodal function of weight norm, optimal at wn ≈ 45–60** (the Goldilocks zone), and **wd=0.3
+    overshot it**, compressing to 28 and dragging val back down. The Omnigrok mechanism works on EMG; the
+    knob is just mistuned (too much wd → past the zone).
+  - **Next (informed by P9), in priority order:**
+    - [ ] **Lower wd so the norm equilibrates *at* the Goldilocks zone (~50), not past it.** Try
+      `wd ∈ {0.1, 0.15, 0.2}` at init×5 — the norm should settle ~45–55 and val should *hold* ~0.60–0.61
+      instead of declining. Cheapest high-value test; should lift the *final* val above 0.60.
+    - [ ] **Bigger init (×10–15) for a longer low-val plateau + a later, sharper rise.** Starting far above
+      Goldilocks (norm ~150–230) stretches the pass-through so the rise into the zone becomes a distinct
+      *late* event instead of blurring into the memorization transient — best remaining shot at a textbook edge.
+    - [ ] **2D `init_scale × wd` sweep** (Goldilocks≈50 now known): init ∈ {5,10,15} × wd ∈ {0.1,0.2,0.3},
+      one seed; map peak val, final val, and edge sharpness. Combine with Tier 1 (rigid features) for the
+      strongest shot.
 
 ### Tier 1 — Make the EMG task rigid (remove the smooth shortcut)
 Attacks condition (1) structurally. Natural follow-up if Tier 0 alone isn't enough — and **combines**
