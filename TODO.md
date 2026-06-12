@@ -163,16 +163,18 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
     a **unimodal function of weight norm, optimal at wn ≈ 45–60** (the Goldilocks zone), and **wd=0.3
     overshot it**, compressing to 28 and dragging val back down. The Omnigrok mechanism works on EMG; the
     knob is just mistuned (too much wd → past the zone).
-  - **Next (informed by P9), in priority order:**
-    - [ ] **Lower wd so the norm equilibrates *at* the Goldilocks zone (~50), not past it.** Try
-      `wd ∈ {0.1, 0.15, 0.2}` at init×5 — the norm should settle ~45–55 and val should *hold* ~0.60–0.61
-      instead of declining. Cheapest high-value test; should lift the *final* val above 0.60.
-    - [ ] **Bigger init (×10–15) for a longer low-val plateau + a later, sharper rise.** Starting far above
-      Goldilocks (norm ~150–230) stretches the pass-through so the rise into the zone becomes a distinct
-      *late* event instead of blurring into the memorization transient — best remaining shot at a textbook edge.
-    - [ ] **2D `init_scale × wd` sweep** (Goldilocks≈50 now known): init ∈ {5,10,15} × wd ∈ {0.1,0.2,0.3},
-      one seed; map peak val, final val, and edge sharpness. Combine with Tier 1 (rigid features) for the
-      strongest shot.
+  - **Next (informed by P9) — P10a + P10b WIRED & QUEUED** in `run_grok_pilots()` / `GROKKING_PILOT_CONFIGS`,
+    awaiting one ~8h notebook run (both configs run sequentially):
+    - [ ] **P10a — land the norm *at* the Goldilocks zone (~50), not past it.** init×5, **wd=0.12**, 120k ep
+      (~2.9h). Norm should settle ~50–70 and val should *hold* ~0.60 instead of declining. Consolidation.
+    - [ ] **P10b — big init → long low plateau → *late* rise (textbook-edge attempt).** init×10, **wd=0.15**,
+      220k ep (~5.3h). **Calibration confirmed the missing piece: init×10 PINS val at a low ~0.39 plateau**
+      while the norm is high (~140–157) and train is fully memorized — the flat low plateau we never had at
+      init×5 (where val shot to 0.59 immediately). The norm then compresses into the Goldilocks zone
+      ~ep 60–90k; if val rises sharply there and *holds*, that's textbook grokking. wd=0.15 (not 0.2) so it
+      equilibrates *in* the zone rather than overshooting like P9.
+    - [ ] **2D `init_scale × wd` sweep** (Goldilocks≈50 known): init ∈ {5,10,15} × wd ∈ {0.1,0.2,0.3},
+      one seed; map peak val, final val, edge sharpness. Combine with Tier 1 (rigid features) for the strongest shot.
 
 ### Tier 1 — Make the EMG task rigid (remove the smooth shortcut)
 Attacks condition (1) structurally. Natural follow-up if Tier 0 alone isn't enough — and **combines**

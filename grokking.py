@@ -18,6 +18,7 @@ from myo_utils import (
     GROKKING_LRS,
     GROKKING_PILOT_ARCH,
     GROKKING_PILOT_BATCH_SIZE,
+    GROKKING_PILOT_CONFIGS,
     GROKKING_PILOT_EPOCHS,
     GROKKING_PILOT_INIT_SCALE,
     GROKKING_PILOT_LABEL_NOISE,
@@ -571,6 +572,28 @@ def run_grok_pilot(
         "elapsed": elapsed,
         "model": model,
     }
+
+
+def run_grok_pilots(configs=None) -> List[Dict[str, Any]]:
+    """Run several grokking pilots sequentially — one full training job per config dict.
+
+    Each entry in *configs* is a dict of keyword overrides forwarded to ``run_grok_pilot``
+    (e.g. ``{"init_scale": 10.0, "wd": 0.15, "epochs": 220_000}``); any key not given falls
+    back to the ``GROKKING_PILOT_*`` defaults. Returns the list of per-run result dicts, in
+    order. Each result already carries its own ``init_scale``/``wd``/``epochs`` so
+    ``plot_grok_pilot`` labels every figure with the config that produced it.
+    """
+    configs = configs if configs is not None else GROKKING_PILOT_CONFIGS
+    n = len(configs)
+    results: List[Dict[str, Any]] = []
+    t0 = time.perf_counter()
+    for i, cfg in enumerate(configs, start=1):
+        print(f"\n{'#'*70}")
+        print(f"# PILOT {i}/{n}: {cfg}")
+        print(f"{'#'*70}")
+        results.append(run_grok_pilot(**cfg))
+    print(f"\nAll {n} pilots done. Total wall time: {format_elapsed(time.perf_counter() - t0)}")
+    return results
 
 
 def plot_grok_pilot(pilot_result: Dict[str, Any]):
