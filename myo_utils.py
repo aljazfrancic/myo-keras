@@ -26,29 +26,31 @@ GROKKING_WEIGHT_DECAYS = [0.09, 0.1, 0.11]
 GROKKING_SEEDS = [100, 123, 256, 420, 789]
 GROKKING_VAL_SUBSET = 8_000
 GROKKING_LOG_EVERY = 100
-# Pilot: single-run grokking experiment with label noise to widen the memorize->generalize gap.
-# Rationale: pilots 1-3 (AdamW strong wd, AdamW weak wd, SGD+Nesterov mini-batch) all failed
-# the same way — clean_tr_acc pinned at (n-flipped)/n once the network settled into a basin
-# that memorized every flipped sample. Per-weight (wd) and per-step (SGD batch) perturbations
-# don't have the targeted leverage to break those basins because they push every weight a
-# little, but the basin walls are large enough that uniform pushes don't break out. This pilot
-# adds *between-sample* perturbation via mixup: each training example is linearly blended with
-# another sample in the same minibatch, so the basin around a flipped point must compete with
-# the nearby clean samples that are now constantly being averaged into it.
-GROKKING_PILOT_ARCH = [200, 100, 70]  # P8: sweep Run 1 arch
-GROKKING_PILOT_OPTIMIZER = "adamw"  # P8: sweep Run 1 optimizer
+# Pilot: single-run grokking experiment. P9 tests the Omnigrok large-norm-INITIALIZATION
+# mechanism — the canonical way to induce grokking on non-algorithmic real data (Liu, Michaud &
+# Tegmark, "Omnigrok", 2022). Rationale: 23 prior runs (15-run sweep + pilots P1-P8) never produced
+# a sharp memorize->generalize edge and never showed a weight-norm compression event — because every
+# run started at the natural Glorot init norm (~16), already at/below the generalizing norm, so weight
+# decay had nothing to compress through. P9 multiplies the initial Dense kernels by INIT_SCALE so the
+# network starts at a LARGE norm (~78 at 5x): a jagged initial function memorizes first with val pinned
+# LOW, then high weight decay compresses the norm down through the generalizing "Goldilocks zone",
+# where val should jump sharply. Clean labels (noise is a proven dead end on smooth-signal EMG); lr
+# lowered to 1e-4 for stability at large init. See TODO.md (Tier 0) for hypothesis + success criterion.
+GROKKING_PILOT_ARCH = [200, 100, 70]  # P9: sweep Run 1 arch
+GROKKING_PILOT_OPTIMIZER = "adamw"  # P9: AdamW — decoupled wd is what drives the norm compression
 GROKKING_PILOT_MOMENTUM = 0.9  # unused for adamw
 GROKKING_PILOT_NESTEROV = True  # unused for adamw
-GROKKING_PILOT_BATCH_SIZE = None  # P8: full-batch (sweep Run 1)
-GROKKING_PILOT_MIXUP_ALPHA = 0.0  # P8: no mixup — pure wd-driven drift
-GROKKING_PILOT_TRAIN_SUBSET = 100  # P8: sweep Run 1 n (not P2's 80)
-GROKKING_PILOT_LABEL_NOISE = 0.0  # P8: KEY CHANGE — clean labels, like sweep Run 1; noise was poisoning EMG grokking
-GROKKING_PILOT_WD = 0.09  # P8: sweep Run 1 wd (the best shape-A drifter)
-GROKKING_PILOT_LR = 3e-4  # P8: sweep Run 1 lr
-GROKKING_PILOT_EPOCHS = 1_200_000  # P8: 12× sweep Run 1's 100k, ~15h wall — extends the only regime that showed delayed-gen drift
-GROKKING_PILOT_SEED = 100  # P8: sweep Run 1 seed (best shape-A drifter)
-GROKKING_PILOT_LOG_EVERY = 100
-GROKKING_PILOT_SUBSAMPLE_SEED = 42  # P8: sweep uses seed=42 for subsample_data; match exactly
+GROKKING_PILOT_BATCH_SIZE = None  # P9: full-batch (1 step/epoch)
+GROKKING_PILOT_MIXUP_ALPHA = 0.0  # P9: no mixup — isolate the init-scale lever
+GROKKING_PILOT_TRAIN_SUBSET = 100  # P9: n=100 (sweep Run 1)
+GROKKING_PILOT_LABEL_NOISE = 0.0  # P9: clean labels — noise poisons EMG grokking (P1-P3, P2)
+GROKKING_PILOT_INIT_SCALE = 5.0  # P9: KEY LEVER — Glorot kernels x5 (norm ~16 -> ~78); grade 3<->8 if it diverges or never leaves the floor
+GROKKING_PILOT_WD = 0.3  # P9: clean-label high wd (Omnigrok grok window 0.3-1.0) to compress the large init
+GROKKING_PILOT_LR = 1e-4  # P9: lowered from 3e-4 for stability at large init
+GROKKING_PILOT_EPOCHS = 280_000  # P9: ~6h wall at measured 76.6 ms/epoch (log_every=100); covers full norm compression toward the wd-equilibrium (6h epoch-ceiling on this machine ~315k)
+GROKKING_PILOT_SEED = 100  # P9: seed 100
+GROKKING_PILOT_LOG_EVERY = 100  # P9: train-bound at 100 (evals ~11% of wall); ~2800 log pts, calibration curve is smooth. (20 -> eval-heavy, only ~195k epochs fit in 6h)
+GROKKING_PILOT_SUBSAMPLE_SEED = 42  # P9: match sweep Run 1's train subsample exactly
 CURATION_ACCURACY_THRESHOLD = 0.7
 FIGURE_SIZE = (20, 5)
 FIGURE_DPI = 200  # 2× Matplotlib default (100) for sharper display and exports

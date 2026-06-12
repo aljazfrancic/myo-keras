@@ -19,6 +19,7 @@ from myo_utils import (
     GROKKING_PILOT_ARCH,
     GROKKING_PILOT_BATCH_SIZE,
     GROKKING_PILOT_EPOCHS,
+    GROKKING_PILOT_INIT_SCALE,
     GROKKING_PILOT_LABEL_NOISE,
     GROKKING_PILOT_LOG_EVERY,
     GROKKING_PILOT_LR,
@@ -136,12 +137,24 @@ def build_grok_model(
     momentum: float = 0.9,
     nesterov: bool = True,
     loss: Optional[Any] = None,
+    init_scale: float = 1.0,
 ):
     layers = [keras.layers.Input(shape=(NUM_EMG_CHANNELS,))]
     for units in arch:
         layers.append(keras.layers.Dense(units, activation="relu"))
     layers.append(keras.layers.Dense(NUM_GESTURES, activation="softmax"))
     model = keras.Sequential(layers)
+    if init_scale != 1.0:
+        # Omnigrok large-norm init: scale each Dense kernel (not the zero-init bias) so the
+        # network starts far OUTSIDE the generalizing weight-norm "Goldilocks zone" and must
+        # compress into it under weight decay — the mechanism that produces a sharp memorize->
+        # generalize transition on non-algorithmic data. Glorot init is seeded upstream
+        # (tf.random.set_seed before this call), so this scaling is deterministic.
+        for lyr in model.layers:
+            w = lyr.get_weights()
+            if w:  # Dense -> [kernel, bias]; Input has no weights -> []
+                w[0] = w[0] * init_scale
+                lyr.set_weights(w)
     if optimizer == "adamw":
         opt = keras.optimizers.AdamW(learning_rate=lr, weight_decay=wd)
     elif optimizer == "sgd":
@@ -417,6 +430,7 @@ def run_grok_pilot(
     nesterov: Optional[bool] = None,
     batch_size: Optional[int] = None,
     mixup_alpha: Optional[float] = None,
+    init_scale: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Single-run grokking pilot with label noise.
 
@@ -443,6 +457,7 @@ def run_grok_pilot(
     nesterov = nesterov if nesterov is not None else GROKKING_PILOT_NESTEROV
     batch_size = batch_size if batch_size is not None else GROKKING_PILOT_BATCH_SIZE
     mixup_alpha = mixup_alpha if mixup_alpha is not None else GROKKING_PILOT_MIXUP_ALPHA
+    init_scale = init_scale if init_scale is not None else GROKKING_PILOT_INIT_SCALE
 
     print(f"Loading curated data (rms_window={rms_window})...")
     train_x_full, train_y_full, val_x_full, val_y_full = load_curated_for_grok(rms_window=rms_window)
@@ -465,12 +480,20 @@ def run_grok_pilot(
 
     print(f"Train: {len(clean_tr_x)} samples, {n_flipped} labels flipped ({label_noise*100:.0f}% noise)")
     print(f"Val:   {len(v_x)} samples")
-    print(f"Config: arch={list(arch)}  opt={opt_str}  lr={lr:g}  wd={wd}  "
+    init_str = f"init={init_scale:g}x" if init_scale != 1.0 else "init=1x"
+    print(f"Config: arch={list(arch)}  opt={opt_str}  lr={lr:g}  wd={wd}  {init_str}  "
           f"batch={effective_batch_size} ({steps_per_epoch} step{'s' if steps_per_epoch != 1 else ''}/epoch)  "
           f"{mixup_str}  seed={seed}  epochs={epochs}")
-    print(f"Expected shape: noisy-label train_acc saturates early at ~{1.0-label_noise:.2f}+")
-    print(f"then climbs to 1.00 as the network memorizes noise; val_acc sits flat;")
-    print(f"clean-label train_acc lifts off late as the network groks the true signal.\n")
+    if init_scale != 1.0:
+        print(f"Expected shape (Omnigrok large-init): train memorizes fast; val sits at a LOW plateau")
+        print(f"while the weight norm (starts ~{init_scale:g}x natural) compresses under weight decay;")
+        print(f"val should jump sharply as the norm enters the generalizing zone.\n")
+    elif label_noise > 0:
+        print(f"Expected shape: noisy-label train_acc saturates early at ~{1.0-label_noise:.2f}+")
+        print(f"then climbs to 1.00 as the network memorizes noise; val_acc sits flat;")
+        print(f"clean-label train_acc lifts off late as the network groks the true signal.\n")
+    else:
+        print(f"Expected shape: clean-label delayed-generalization drift (no sharp edge expected).\n")
 
     tf.random.set_seed(seed)
     if use_mixup:
@@ -486,6 +509,7 @@ def run_grok_pilot(
             arch, lr, wd,
             optimizer=optimizer, momentum=momentum, nesterov=nesterov,
             loss=tf.keras.losses.CategoricalCrossentropy(),
+            init_scale=init_scale,
         )
         cb = GrokLoggingCallback(
             val_data=(v_x, v_y_oh),
@@ -501,7 +525,8 @@ def run_grok_pilot(
         )
     else:
         model = build_grok_model(
-            arch, lr, wd, optimizer=optimizer, momentum=momentum, nesterov=nesterov
+            arch, lr, wd, optimizer=optimizer, momentum=momentum, nesterov=nesterov,
+            init_scale=init_scale,
         )
         cb = GrokLoggingCallback(
             val_data=(v_x, v_y),
@@ -531,6 +556,7 @@ def run_grok_pilot(
         "nesterov": nesterov,
         "batch_size": effective_batch_size,
         "mixup_alpha": mixup_alpha if use_mixup else 0.0,
+        "init_scale": init_scale,
         "label_noise": label_noise,
         "train_subset": train_subset,
         "n_flipped_labels": n_flipped,
@@ -620,9 +646,11 @@ def plot_grok_pilot(pilot_result: Dict[str, Any]):
     bs_label = r.get("batch_size", r["train_subset"])
     mixup_a = r.get("mixup_alpha", 0.0)
     mixup_label = f"  mixup={mixup_a}" if mixup_a else ""
+    init_s = r.get("init_scale", 1.0)
+    init_label = f"  init×{init_s:g}" if init_s != 1.0 else ""
     fig.suptitle(
         f"Grokking pilot: arch={list(r['arch'])}  opt={opt_label}  "
-        f"lr={r['lr']:g}  wd={r['wd']}  batch={bs_label}{mixup_label}  "
+        f"lr={r['lr']:g}  wd={r['wd']}{init_label}  batch={bs_label}{mixup_label}  "
         f"seed={r['seed']}  noise={r['label_noise']:.2f}  train_n={r['train_subset']}",
         fontsize=12,
         y=1.03,

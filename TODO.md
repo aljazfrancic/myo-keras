@@ -145,7 +145,17 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
     a ≤10k-epoch window**, coincident with monotone weight-norm decline. That is the sharp edge.
   - **If α too large diverges / never memorizes:** back off α; if val never leaves the floor, lower wd
     or raise lr slightly. Grade α upward until you find the memorize-then-grok window.
-  - Cost: ~1–1.5h per run at 300k full-batch epochs; start with 3–4 (α,wd) cells on one seed.
+  - Cost (measured, this session): **76.6 ms/epoch at log_every=100** (train-bound — evals are ~11%),
+    so **~6h ≈ 280k epochs**; at the fine log_every=20 it's ~110 ms/epoch (eval-heavy) → 6h ≈ 195k.
+    The 6h epoch ceiling is ~315k even with no evals (the 100-sample full-batch step alone is ~68 ms).
+  - **STATUS: wired, calibrated, LAUNCHING — strongest signal in the project's history.** `init_scale`
+    lever added to `build_grok_model`/`run_grok_pilot`. Two calibration runs (2.5k + 5k epochs at init×5,
+    wd=0.3, lr=1e-4) show, for the first time on this dataset: (a) **val starts at ~0.09 — *below* chance**
+    (large init killed the smooth-manifold shortcut), and (b) **weight norm compresses monotonically**
+    78 → 69 over 5k epochs (no oscillation — the Omnigrok mechanism is actually running). Val reached
+    **0.5915 @ ep 5,000**, already matching P8's all-time peak (0.5901 @ ep 548k) with most of the norm
+    compression still ahead. Full run set to **280k epochs @ log_every=100 (~5.95h)** to test whether val
+    jumps sharply as the norm enters the Goldilocks zone, or saturates near the ~0.59 ceiling like P8.
 
 ### Tier 1 — Make the EMG task rigid (remove the smooth shortcut)
 Attacks condition (1) structurally. Natural follow-up if Tier 0 alone isn't enough — and **combines**
@@ -206,17 +216,27 @@ batch_size  = None         # full-batch
 train_subset= 100
 label_noise = 0.0          # clean — noise is a proven dead end on EMG
 mixup_alpha = 0
-epochs      = 300_000
+epochs      = 280_000      # ~5.95h at measured 76.6 ms/epoch; 6h epoch-ceiling this machine ~315k
 seed        = 100
 subsample_seed = 42
-log_every   = 20           # tight, to resolve a sharp edge
+log_every   = 100          # train-bound here; ~2800 pts resolves the curve (every-20 is eval-heavy, ~halves epochs in 6h)
 ```
 
 Add `GROKKING_PILOT_INIT_SCALE = 5.0` to `myo_utils.py`, wire `init_scale` through
 `build_grok_model` → `run_grok_pilot`, then run `run_grok_pilot()` and `plot_grok_pilot(result)` in
-the notebook. **Watch for:** val dropping to a *low* plateau (<0.45) after memorization, weight norm
-descending from a large start (~80–150), and a sharp val rise as the norm crosses into the zone.
-If it diverges, α→3; if val never leaves the floor by 150k, wd→0.1 or lr→2e-4. **Expected ~1.2h.**
+the notebook. **Watch for (updated from calibration):** val starts *below chance* (~0.09) and climbs
+*with* memorization to ~0.56 by ep ~2k — there is **no flat low plateau**, the climb is gradual — while
+the weight norm descends monotonically from ~78. The open question the full run answers: does the
+**deep** norm compression past ep ~5k (toward the wd-equilibrium) trigger a **late sharp val jump**
+(textbook grokking) or a P8-style saturation near the ~0.59 ceiling? So far the *shape* is smooth drift,
+but the below-chance start + clean monotone compression are both unprecedented on this data.
+If it diverges, α→3; if val saturates early, try wd→0.5–1.0 (stronger compression). **Expected ~5.95h**
+(measured 76.6 ms/epoch this session). For a faster first look, set `GROKKING_PILOT_EPOCHS = 50_000`
+(~1.1h) — memorization (ep ~2k) and the norm-compression trend are fully visible by then.
+
+All constants in `myo_utils.py` are already set to this config and the run is smoke-tested
+(see Tier 0 STATUS). To launch: restart the notebook kernel (to re-import the constants), then run the
+`run_grok_pilot()` cell followed by `plot_grok_pilot(pilot_result)`.
 
 ---
 
