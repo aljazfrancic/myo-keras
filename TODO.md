@@ -187,6 +187,17 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
     generalization even at high norm), and the rise spans ~20k epochs rather than a vertical cliff — but on a
     **log-epoch axis** it is the canonical grokking curve, and qualitatively unlike the "smooth drift from
     step 1" of all 24 prior runs.
+  - **Why the figure ([`pics/p10b_grokking_logx.png`](pics/p10b_grokking_logx.png)) *is* grokking — plain English.**
+    Read it left→right (log-epoch x-axis): **(1) Memorize** — gray *train* hits 100% by ep ~1.8k while blue *val*
+    is stuck low (~0.37): the net aced its 100 study examples by rote, without learning the gesture. **(2) Plateau**
+    — train stays 100%, val stays flat & low for ~10× longer; looks like "it just memorized, the end." **(3) Grok**
+    — val *suddenly climbs* 0.37→0.6 **while train never changes** (still 100%), so the gain is *not* from fitting
+    the data better — the net reorganizes into a simpler solution. **Smoking gun:** the orange weight norm *falls*
+    (157→40) in mirror image as val *rises* — weight decay squeezes the net out of the big "memorize" solution into
+    the small "generalize" one, and val pops when it crosses over. All defining traits present: memorize-first, a
+    long delay before generalization, and a sudden norm-driven jump with **train already maxed** (the rise can't be
+    "more learning of the train set"). The plateau-above-chance caveat above is why it's *grokking-shaped delayed
+    generalization on real data*, not the purest math-puzzle version.
   - **Next, in priority order** (wired in `myo_utils.py`; `GROKKING_PILOT_CONFIGS` selects the active run):
     - [x] **Extend P10b to 450k (P11, done, 10h53m): saturates at val ~0.61–0.62.** Peak **0.6206 @ ep 441k**,
       final 0.6125, **norm equilibrated ~40–44**; shape + mechanism reproduce (corr(val,wn) **−0.85**, rise
@@ -198,9 +209,10 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
       *doubly* motivated by the ±0.03 divergence above. Enables a mean±std error-band figure. **WIRED & ACTIVE**
       (`GROKKING_PILOT_MULTISEED`, ~3.6h/seed at 150k → ~14h). Each seed shows plateau→rise; saturation level
       is already established by P11.
-    - [x] **Publication figure** — log-x val + weight-norm: [`pics/p10b_grokking_logx.png`](pics/p10b_grokking_logx.png).
-      Train→1.0 at ep 1.1k, flat val plateau ~0.33 to ep ~10k, then the rise tracks the norm compression
-      (157→44). Reusable via `plot_grok_logx()`; the notebook plot cell now emits it for every run.
+    - [x] **Publication figure** — log-x val + weight-norm: [`pics/p10b_grokking_logx.png`](pics/p10b_grokking_logx.png)
+      (now the 450k/P11 version). Train→1.0 at ep ~1.8k, flat val plateau ~0.37 to ep ~10k, then the rise tracks
+      the norm compression (157→40), saturating ~0.62. See the plain-English reading guide under P10 RESULTS above.
+      Reusable via `plot_grok_logx()`; the notebook plot cell now emits it for every run.
     - [ ] **Sharpen the edge** (optional): even bigger init (×15–20) → longer flatter plateau + more abrupt entry
       into the zone; and/or Tier 1 rigid features (raw windows / tiny RMS) to push the plateau toward chance.
 
