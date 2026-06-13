@@ -11,10 +11,57 @@ algorithmic task — the EMG dataset is the experiment, not a vehicle for it
 > roadmap, the 26 runs done, banked findings, and analysis discipline in one place.
 > Per-run detail otherwise lives in `git log` (master = the 15-run sweep, pilot = pilots P1–P10).
 >
-> **STATUS — grokking demonstrated & confirmed (P10b → P11):** flat low-val plateau (≈0.37) → delayed,
-> weight-norm-compression-driven rise (corr −0.85) → **saturates at val ~0.61–0.62** (P11 extend, 450k).
-> Figure: [`pics/p10b_grokking_logx.png`](pics/p10b_grokking_logx.png). See **Tier 0 → P10/P11 RESULTS**.
-> Next overnight run is **wired & active**: multi-seed robustness (P12, `GROKKING_PILOT_MULTISEED`).
+> **STATUS (2026-06-14) — grokking *dynamics* demonstrated; *outcome* is marginal.** P10b → P11 show the real
+> three-phase signature: flat low-val plateau (≈0.37) → norm-compression-driven delayed rise (corr −0.85) →
+> saturates val ~0.61–0.62 (P11, 450k). Figure: [`pics/p10b_grokking_logx.png`](pics/p10b_grokking_logx.png).
+> **But** a vanilla early-stopped net on the *same clean split* hits ~0.58 by ep ~150, so the grok buys only
+> **+0.04 (within val noise) at 3000× the compute** — the "better classifier" claim is dead. The next action is
+> **not** P12; it's the **ceiling baseline**, which gates everything. **Read ⚖️ Current verdict (below) first.**
+
+---
+
+## ⚖️ Current verdict (2026-06-14) — three things are true at once
+
+After auditing the pipeline and running a matched baseline, the honest read is **not** "false before, real now."
+It's: the **dynamics** are real, the **result** sits in the same disappointing neighbourhood it always has, and a
+**ceiling number we don't have yet** decides whether even the modest claim is worth writing.
+
+1. **The split is clean.** Train/val/test are separate recording sessions (`-1`/`-2`/`-3`), loaded by independent
+   calls, **never concatenated-then-shuffled** ([`myo_utils.py:135`](myo_utils.py#L135)) — the temporal
+   window-overlap leak *cannot* happen. Asterisk: **within-subject cross-session**, not leave-one-subject-out, so a
+   reviewer can still say "same hands, different day." (5 participants: 12345 / 21547 / 45612 / 54321 / 78945, each
+   with sessions -1/-2/-3.)
+2. **The dynamics are real.** Large-init plateau → delayed rise → *monotone* norm compression (corr −0.85), visibly
+   unlike a baseline that memorizes and overfits in 150 epochs. The Omnigrok mechanism genuinely fires on real
+   physiological signal — not an artifact.
+3. **The payoff is marginal.** Vanilla early-stopped MLP, *same* pipeline/split/seeds, **best val ≈ 0.58 @ ep ~150**
+   (then overfits down); grok **0.62 @ 450k** → **+0.04, inside the val noise**, **n=1**. (Rows are autocorrelated —
+   causal RMS emits one row/sample — so *effective* val N ≪ 8000; trust small edges *less*.) This **rhymes with the
+   old death**: the old sweep was a false positive; this, with a cleaner setup, lands at real-but-underwhelming.
+
+**The reframe that shrinks the claim:** this is grokking-**the-dynamics**, not grokking-**the-outcome**. Canonical
+grokking (Power; Omnigrok/MNIST) the train/val gap *closes* — val climbs to ≈ train. Here train=1.0, val saturates
+0.62, the gap narrows **0.63 → 0.38 and then stops**. It never closes. Defensible sentence: *"grokking-flavoured
+delayed generalization shows up cleanly on a non-toy EMG dataset"* — a clean **blog post**, not "grokking solved EMG
+decoding," and not a paper.
+
+**Which claim is on the table decides what runs next:**
+- ❌ **"Better classifier."** Dead. The baseline settled it; no number of seeds turns +0.04-within-noise into a
+  result. Don't spend the 14h P12 seeds *for this* — that's just making a non-result robust (the old death in a
+  cleaner shirt).
+- ✅ **"Clean phenomenology of grokking on real surface EMG."** Here +0.04 is irrelevant; this claim needs the
+  **ceiling** + **P12 seeds** (error band). Worth *understanding* and a paragraph — not a headline.
+
+**Gate everything on ONE cheap number — the ceiling — and run nothing expensive until it lands** (see **▶️
+Recommended immediate next run**, rewritten to the ceiling baseline):
+- **Ceiling ≈ 0.62–0.65** (good model + proper CV) → the task is just *hard*, 0.62 is near-Bayes, the grok found
+  ~everything available → the phenomenology claim is live and the **init×10 ablation** is justified.
+- **Ceiling ≈ 0.85** → 0.62 is mediocre, the grok is **wandering, not converging** — pretty dynamics, model never
+  finds the function → keep it a private *huh*, don't write it up.
+
+**Sequencing:** the ceiling baseline is a normal supervised run (hours, background) — fine now. The **450k init
+ablation** and **14h P12 seeds** are *not* day-one-of-a-busy-week runs — queue them only if the gate sends us down
+the phenomenology path, and after higher-priority work clears.
 
 ---
 
@@ -115,6 +162,13 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
 - **Weight-norm "breathing" ≠ signal.** Norm oscillates with quasi-period ~25–30k epochs, weakly
   anti-correlated with val (~−0.1 to −0.25). Don't misread oscillation as a transition — a real grok
   needs *monotone* norm compression through the Goldilocks zone.
+- **Split audited clean (2026-06-14)** — cross-session `-1/-2/-3`, never shuffled (no train↔val leakage);
+  within-subject, not LOSO (5 participants). The delayed rise is real generalization, not fit-leaked-neighbours.
+- **Vanilla baseline ≈ 0.58 @ ep ~150** (normal init, same split, early-stopped; then overfits down) → the grok's
+  0.62 is **+0.04 at 3000× compute, within noise**. "Better classifier" is dead; chase *phenomenology*, gated on
+  the **ceiling** (see **⚖️ Current verdict**).
+- **Val noise > naive binomial** — causal RMS emits one row/sample, so adjacent val rows overlap by `n−1` →
+  *effective* val N ≪ 8000. The ±0.006 (1σ) in *Analysis discipline* is a floor; trust small edges *less*, not more.
 
 ---
 
@@ -125,6 +179,9 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
 - ❌ **mixup α ≥ 4** on an ~80-sample set — over-smooths, small regression (P6).
 - ❌ **Shrinking arch alone** to force a plateau — no effect on shape (P7).
 - ❌ **Just more epochs** at the existing config — saturates by ~500k (P8).
+- ❌ **The "better classifier / higher val number" framing** — settled by the matched baseline: grok 0.62 vs vanilla
+  early-stop ~0.58 = **+0.04 within noise**. Don't chase a higher number, and don't run seeds *to prove a result* —
+  the only claim left is *phenomenology*, and only if the **ceiling** gate allows (see **⚖️ Current verdict**).
 - ❌ **Switching to a toy/algorithmic task** — ever, even as a "sanity check" or "calibration run."
   Verbatim directive: *"dont ever suggest dropping this dataset for a algoritmic toy task; that
   foregoes the whole point of the experiment."* Allowed lever space is restricted to changes that
@@ -205,10 +262,16 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
       *same* seed (val 0.567 vs 0.608 @ ep 220k) — RNG-context (P10a ran before P10b originally) + FP
       non-determinism over 10⁵ steps in the drift regime. **Robust** = the shape + saturation (~0.61); **not
       reproducible** = exact val-at-epoch (±~0.03). Ceiling ~0.62 is the n=100 information limit, not optimization.
-    - [ ] **Multi-seed P10b (P12)** (seeds 123, 256, 420, 789) — prove it's robust, not seed/run-luck; now
-      *doubly* motivated by the ±0.03 divergence above. Enables a mean±std error-band figure. **WIRED & ACTIVE**
-      (`GROKKING_PILOT_MULTISEED`, ~3.6h/seed at 150k → ~14h). Each seed shows plateau→rise; saturation level
-      is already established by P11.
+    - [ ] **Multi-seed P10b (P12)** (seeds 123, 256, 420, 789) — error-band figure, for the **phenomenology claim
+      only**. **GATED:** worth the ~14h *only if* the ceiling gate sends us down the phenomenology path **and**
+      higher-priority work has cleared. It does **not** rescue a "better classifier" claim — seeds confirming
+      +0.04-within-noise just make a non-result robust. Wired (`GROKKING_PILOT_MULTISEED`, ~3.6h/seed at 150k →
+      ~14h) but **no longer "run next"**; the ceiling baseline goes first.
+    - [ ] **init×10 *causal* ablation (the mechanism question)** — is large init **load-bearing** or just an
+      **accelerant**? Run **init×1 at the full P10b regime** (adamw, lr 1e-4, wd 0.15, n=100, full-batch) **all the
+      way to 450k**: if val crawls to ~0.62 anyway → init merely speeds the journey; if it plateaus lower → init is
+      causal. **No baseline config tests this** — the matched-regime baseline (init×1, wd 0.15) is capped at 6k
+      epochs, ~50–100× too short to show a delayed rise. Gated on the ceiling, like P12.
     - [x] **Publication figure** — log-x val + weight-norm: [`pics/p10b_grokking_logx.png`](pics/p10b_grokking_logx.png)
       (now the 450k/P11 version). Train→1.0 at ep ~1.8k, flat val plateau ~0.37 to ep ~10k, then the rise tracks
       the norm compression (157→40), saturating ~0.62. See the plain-English reading guide under P10 RESULTS above.
@@ -261,7 +324,28 @@ and stop us from smearing a sharp edge.
 
 ---
 
-## ▶️ Recommended immediate next run
+## ▶️ Recommended immediate next run — the CEILING baseline (gates everything)
+
+**The one number that flips the interpretation.** What val is *actually achievable* on this 8-class cross-session
+EMG task with a properly-trained model? It separates "partial grok because the problem is **hard**" (ceiling
+~0.62–0.65 → 0.62 is near-Bayes) from "partial grok because the model is **lost**" (ceiling ~0.85 → the grok is
+wandering). Every expensive run below is *conditional* on it; this one is cheap and **no-regret** — a fact about
+your own data, useful to the gesture-recognition origin domain whether or not grokking is ever in frame.
+
+- **Model:** a genuinely good supervised model — *not* the n=100 / lr-1e-4 / full-batch grok harness. Use the
+  **full** train-session data (not the 100-subsample), sensible Adam (lr 1e-3), **early stopping** on val, light wd.
+  Try the existing `[200,100,70]` MLP *and* one stronger variant (wider/deeper, or a small 1-D conv over raw
+  windows); report the best.
+- **Protocol — report both:** (1) **within-subject cross-session** (the current `-1/-2/-3` split, matches the grok
+  setup) and (2) **leave-one-subject-out** over the 5 participants if feasible (the protocol you'd actually claim).
+- **Cost:** normal supervised training — hours at most, background job. *Not* 450k epochs.
+- **Then gate** per the two branches in **⚖️ Current verdict**. Only a ceiling ≈ 0.62–0.65 justifies the init
+  ablation + P12 seeds; a ceiling ≈ 0.85 shelves the write-up.
+
+---
+
+> **📦 Superseded below** — the previous recommended run was the P9 Omnigrok large-init pilot; it's **done**
+> (P9 → P10b → P11, see Tier 0 RESULTS). Kept verbatim for the record only — **not** the next action.
 
 **Omnigrok large-init pilot, single seed, exact config:**
 
