@@ -680,3 +680,54 @@ def plot_grok_pilot(pilot_result: Dict[str, Any]):
     )
     plt.tight_layout()
     return fig, axes
+
+
+def plot_grok_logx(result: Dict[str, Any], *, savepath: Optional[str] = None, title: Optional[str] = None):
+    """Canonical grokking view: dual-axis, LOG-x — train+val accuracy and L2 weight norm vs epoch.
+
+    On a log-epoch axis the flat low-val plateau and the delayed generalization rise become
+    visible, and the weight-norm curve (right axis) shows the compression that drives it. A dotted
+    marker flags where train accuracy first hits 1.0 (memorization), the start of the grok window.
+    """
+    import matplotlib.pyplot as plt
+
+    r = result
+    x = np.asarray(r["epochs"], dtype=float)
+    tr = np.asarray(r["train_accuracy"])
+    va = np.asarray(r["val_accuracy"])
+    wn = np.asarray(r["weight_norms"])
+
+    fig, ax1 = plt.subplots(figsize=(9, 5.5), dpi=FIGURE_DPI)
+    ax2 = ax1.twinx()
+    ax1.plot(x, tr, color="C7", lw=1.0, alpha=0.55, label="train acc")
+    ax1.plot(x, va, color="C0", lw=2.0, label="val acc")
+    ax2.plot(x, wn, color="orange", ls="--", lw=1.6, alpha=0.9, label="L2 weight norm")
+
+    mem_idx = int(np.argmax(tr >= 1.0)) if np.any(tr >= 1.0) else None
+    if mem_idx is not None and x[mem_idx] > 0:
+        ax1.axvline(x[mem_idx], color="C3", ls=":", lw=1.0, alpha=0.7)
+        ax1.annotate(
+            f"train→1.0 (ep {int(x[mem_idx]):,})",
+            xy=(x[mem_idx], 0.03), xycoords=("data", "axes fraction"),
+            fontsize=8, color="C3", ha="left", va="bottom",
+        )
+
+    ax1.set_xscale("log")
+    ax1.set_xlabel("Epoch (log scale)")
+    ax1.set_ylabel("Accuracy")
+    ax2.set_ylabel("L2 weight norm")
+    ax1.set_ylim(0.0, 1.02)
+    ax1.grid(True, which="both", alpha=0.25)
+    is_ = r.get("init_scale", 1.0)
+    ttl = title or (
+        f"Grokking on EMG — init×{is_:g}, wd={r.get('wd')}, "
+        f"n={r.get('train_subset')}, seed={r.get('seed')}   (val {va.min():.3f}→{va.max():.3f})"
+    )
+    ax1.set_title(ttl, fontsize=11)
+    h1, l1 = ax1.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax1.legend(h1 + h2, l1 + l2, loc="center right", fontsize=9)
+    fig.tight_layout()
+    if savepath:
+        fig.savefig(savepath, bbox_inches="tight")
+    return fig

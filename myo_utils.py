@@ -51,15 +51,26 @@ GROKKING_PILOT_EPOCHS = 280_000  # P9: ~6h wall at measured 76.6 ms/epoch (log_e
 GROKKING_PILOT_SEED = 100  # P9: seed 100
 GROKKING_PILOT_LOG_EVERY = 100  # P9: train-bound at 100 (evals ~11% of wall); ~2800 log pts, calibration curve is smooth. (20 -> eval-heavy, only ~195k epochs fit in 6h)
 GROKKING_PILOT_SUBSAMPLE_SEED = 42  # P9: match sweep Run 1's train subsample exactly
-# Multi-config pilots: run_grok_pilots() runs one full training job per dict; each dict's keys override
-# the GROKKING_PILOT_* defaults above (lr=1e-4, arch, seed, etc. carry over). P10 tunes the Goldilocks
-# zone found in P9 (val is unimodal in weight norm, peaking at wn ~45-60; P9's wd=0.3 overshot to 28).
-# Calibration confirmed init x10 PINS val at a low ~0.39 plateau while the norm is high (~140-157) — the
-# flat plateau textbook grokking needs; the norm then compresses into the zone ~ep 60-90k (the late edge).
-GROKKING_PILOT_CONFIGS = [
-    {"init_scale": 5.0,  "wd": 0.12, "epochs": 120_000},  # P10a: consolidate — land near Goldilocks (~50-70), val should HOLD ~0.60
-    {"init_scale": 10.0, "wd": 0.15, "epochs": 220_000},  # P10b: textbook-edge attempt — long low plateau -> late rise into Goldilocks -> hold
+# Multi-config pilots: run_grok_pilots() runs one full training job per dict in the ACTIVE list below;
+# each dict's keys override the GROKKING_PILOT_* defaults (lr=1e-4, arch, seed, etc. carry over).
+# P10b (init x10, wd=0.15) produced the grokking shape: flat low plateau (val ~0.35) -> delayed rise
+# (+0.17, corr(val,wn)=-0.85) -> val 0.608 and STILL RISING at the 220k cutoff. See TODO Tier 0.
+GROKKING_PILOT_P10 = [  # completed P10a (control) + P10b (grok); kept for reproduction
+    {"init_scale": 5.0,  "wd": 0.12, "epochs": 120_000},  # P10a control — flat hold ~0.576
+    {"init_scale": 10.0, "wd": 0.15, "epochs": 220_000},  # P10b grok
 ]
+# P11 (RECOMMENDED next): extend the P10b grok to find the ceiling — it hadn't saturated at 220k.
+# Re-runs from scratch at seed 100 (reproduces the first 220k exactly, then continues). ~10.5h.
+GROKKING_PILOT_EXTEND = [
+    {"init_scale": 10.0, "wd": 0.15, "epochs": 450_000, "seed": 100},
+]
+# P12: multi-seed robustness of the P10b grok (run after P11) — same config, 4 fresh inits.
+# ~3.6h/seed at 150k => ~14h for all four; trim seeds/epochs to fit your window.
+GROKKING_PILOT_MULTISEED = [
+    {"init_scale": 10.0, "wd": 0.15, "epochs": 150_000, "seed": s}
+    for s in (123, 256, 420, 789)
+]
+GROKKING_PILOT_CONFIGS = GROKKING_PILOT_EXTEND  # <-- ACTIVE next run = extend P10b. Swap to *_MULTISEED (or _P10) as needed.
 CURATION_ACCURACY_THRESHOLD = 0.7
 FIGURE_SIZE = (20, 5)
 FIGURE_DPI = 200  # 2× Matplotlib default (100) for sharper display and exports

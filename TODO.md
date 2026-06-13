@@ -13,7 +13,8 @@ algorithmic task — the EMG dataset is the experiment, not a vehicle for it
 >
 > **STATUS — grokking shape demonstrated (P10b):** flat low-val plateau (≈0.35) → delayed, weight-norm-
 > compression-driven generalization rise (corr −0.85) → val **0.608 and still climbing** at the cutoff.
-> See **Tier 0 → P10 RESULTS**. Next: extend P10b (hadn't saturated), multi-seed it, make the log-x figure.
+> Figure: [`pics/p10b_grokking_logx.png`](pics/p10b_grokking_logx.png). See **Tier 0 → P10 RESULTS**.
+> Next overnight run is **wired & active**: extend P10b to 450k (it hadn't saturated), then multi-seed.
 
 ---
 
@@ -186,13 +187,16 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
     generalization even at high norm), and the rise spans ~20k epochs rather than a vertical cliff — but on a
     **log-epoch axis** it is the canonical grokking curve, and qualitatively unlike the "smooth drift from
     step 1" of all 24 prior runs.
-  - **Next, in priority order:**
-    - [ ] **Extend P10b to ~450k epochs** — it was *still rising* at 220k (we cut it off mid-tail). Likely
-      pushes val past 0.62 and shows saturation. Highest priority, cheapest big win (~10.5h; run alone overnight).
-    - [ ] **Multi-seed P10b** (seeds 123, 256, 420, 789) to show the grok is robust (not seed-luck) and to make
-      a clean seed-averaged figure with error bands.
-    - [ ] **Publication figure**: P10b val + weight-norm vs epoch on a **log-x axis** (plateau→rise reads as
-      textbook grokking); `plot_grok_pilot` panel 2 already pairs val with weight norm — add a log-x variant.
+  - **Next, in priority order** (wired in `myo_utils.py`; `GROKKING_PILOT_CONFIGS` selects the active run):
+    - [ ] **Extend P10b to 450k epochs** — *still rising* at the 220k cutoff; find the ceiling/saturation.
+      **WIRED & ACTIVE** (`GROKKING_PILOT_EXTEND`, seed 100, ~10.5h). Re-runs from scratch (reproduces the
+      first 220k exactly, then continues). This is the next overnight run — just launch the notebook cells.
+    - [ ] **Multi-seed P10b** (seeds 123, 256, 420, 789) — prove it's robust, not seed-luck; enables an
+      error-band figure. **WIRED** (`GROKKING_PILOT_MULTISEED`, ~3.6h/seed at 150k); point
+      `GROKKING_PILOT_CONFIGS` at it after the extend run.
+    - [x] **Publication figure** — log-x val + weight-norm: [`pics/p10b_grokking_logx.png`](pics/p10b_grokking_logx.png).
+      Train→1.0 at ep 1.1k, flat val plateau ~0.33 to ep ~10k, then the rise tracks the norm compression
+      (157→44). Reusable via `plot_grok_logx()`; the notebook plot cell now emits it for every run.
     - [ ] **Sharpen the edge** (optional): even bigger init (×15–20) → longer flatter plateau + more abrupt entry
       into the zone; and/or Tier 1 rigid features (raw windows / tiny RMS) to push the plateau toward chance.
 
