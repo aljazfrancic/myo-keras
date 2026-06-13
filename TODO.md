@@ -8,8 +8,12 @@ algorithmic task — the EMG dataset is the experiment, not a vehicle for it
 (see *Disproven / forbidden* below).
 
 > Branch: **pilot**. This file is the single source of truth for the grokking effort —
-> roadmap, the 23 runs already done, banked findings, and analysis discipline in one place.
-> Per-run detail otherwise lives in `git log` (master = the 15-run sweep, pilot = pilots P1–P8).
+> roadmap, the 26 runs done, banked findings, and analysis discipline in one place.
+> Per-run detail otherwise lives in `git log` (master = the 15-run sweep, pilot = pilots P1–P10).
+>
+> **STATUS — grokking shape demonstrated (P10b):** flat low-val plateau (≈0.35) → delayed, weight-norm-
+> compression-driven generalization rise (corr −0.85) → val **0.608 and still climbing** at the cutoff.
+> See **Tier 0 → P10 RESULTS**. Next: extend P10b (hadn't saturated), multi-seed it, make the log-x figure.
 
 ---
 
@@ -34,7 +38,7 @@ does.
 
 ---
 
-## ✅ Already tried (24 training runs — none produced a textbook sharp edge; P9 broke the val ceiling)
+## ✅ Already tried (26 training runs — **P10b produced the grokking shape**; P9 broke the val ceiling)
 
 ### Master branch — the 15-run AdamW sweep
 - [x] **wd ∈ {0.09, 0.10, 0.11} × 5 seeds**, arch `[200,100,70]`, lr 3e-4, 100k full-batch epochs,
@@ -46,7 +50,7 @@ does.
   - Weight norm rises to ~38–40 by 15k then **oscillates** (no clean compression). Ceiling ~0.61.
   - Measurement lessons from analyzing this sweep are banked in *Analysis discipline* below.
 
-### Pilot branch — 9 mechanism pilots (P1–P9)
+### Pilot branch — 11 pilots (P1–P9, P10a, P10b)
 - [x] **P1** — AdamW wd=0.5, n=40, 25% noise → *anti-grokking decay* (val peaks 0.40 then decays).
   wd compresses incidental generalization but can't dislodge flipped-label basins.
 - [x] **P2** — AdamW wd=0.1, n=80, 30% noise → *flat plateau val ~0.45, ZERO liftoff in 149k epochs.*
@@ -69,7 +73,11 @@ does.
 - [x] **P9** — **Omnigrok large-init** (init×5, wd=0.3, lr=1e-4, clean, n=100, 280k full-batch, 6h 31m) →
   **broke the 0.59 ceiling** (band ~0.602, peak 0.6143) with the **first real weight-norm compression
   event** (78→28), but **no sharp edge** — val peaks early then declines as wd overshoots the Goldilocks
-  zone (wn≈45–60). Full result + next steps in **Tier 0 → RESULT** below. *Best result to date.*
+  zone (wn≈45–60). *(Superseded by P10b.)*
+- [x] **P10a / P10b** — **Goldilocks-tuned large-init** (init×5 wd=0.12 / init×10 wd=0.15, 120k+220k, 8h) →
+  **P10b is the grokking shape**: flat low plateau (val ≈0.35, ep 2–15k) → **delayed rise +0.17 over ep 11–31k**
+  driven by norm compression (corr(val,wn) = −0.85) → **val 0.608 @ ep 220k, still rising**. P10a holds a flat
+  0.576 (control). Full result + next steps in **Tier 0 → P10 RESULTS** below. ***Best result to date.***
 
 ### Meta-levers ruled out by the above
 - [x] **Longer timescale** (1.2M steps) — saturates; not the answer.
@@ -163,18 +171,30 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
     a **unimodal function of weight norm, optimal at wn ≈ 45–60** (the Goldilocks zone), and **wd=0.3
     overshot it**, compressing to 28 and dragging val back down. The Omnigrok mechanism works on EMG; the
     knob is just mistuned (too much wd → past the zone).
-  - **Next (informed by P9) — P10a + P10b WIRED & QUEUED** in `run_grok_pilots()` / `GROKKING_PILOT_CONFIGS`,
-    awaiting one ~8h notebook run (both configs run sequentially):
-    - [ ] **P10a — land the norm *at* the Goldilocks zone (~50), not past it.** init×5, **wd=0.12**, 120k ep
-      (~2.9h). Norm should settle ~50–70 and val should *hold* ~0.60 instead of declining. Consolidation.
-    - [ ] **P10b — big init → long low plateau → *late* rise (textbook-edge attempt).** init×10, **wd=0.15**,
-      220k ep (~5.3h). **Calibration confirmed the missing piece: init×10 PINS val at a low ~0.39 plateau**
-      while the norm is high (~140–157) and train is fully memorized — the flat low plateau we never had at
-      init×5 (where val shot to 0.59 immediately). The norm then compresses into the Goldilocks zone
-      ~ep 60–90k; if val rises sharply there and *holds*, that's textbook grokking. wd=0.15 (not 0.2) so it
-      equilibrates *in* the zone rather than overshooting like P9.
-    - [ ] **2D `init_scale × wd` sweep** (Goldilocks≈50 known): init ∈ {5,10,15} × wd ∈ {0.1,0.2,0.3},
-      one seed; map peak val, final val, edge sharpness. Combine with Tier 1 (rigid features) for the strongest shot.
+  - **P10 RESULTS (complete — 8h, both configs): 🎉 GROKKING SHAPE ACHIEVED in P10b.**
+    - [x] **P10a** (init×5, wd=0.12, 120k): val climbs gently 0.565 → **holds ~0.576** (final 0.5764), norm
+      equilibrated ~44–48. No edge (max smoothed rise +0.012), corr(val,wn)≈0. Clean stable mid-band but
+      *below* P9's peak — wd=0.12 at init×5 just gives a flat plateau. Useful control, not the prize.
+    - [x] **P10b** (init×10, wd=0.15, 220k): **the textbook three-phase signature, first time on this data.**
+      (1) memorize at ep 1.1k; (2) **flat LOW plateau val ≈0.35** (ep 2–15k, std 0.013) while norm is high
+      (~135); (3) **delayed sharp rise** — val **+0.17 over ep 11–31k** (+0.105 in a single 10k window) as the
+      norm compresses. **corr(val, wn) = −0.852** — generalization is *driven by* norm compression, the grokking
+      mechanism. Val reaches **0.6084 @ ep 220k and is STILL RISING** (norm equilibrated ~44, in the Goldilocks
+      zone — wd=0.15 landed it right). New project best on *both* shape and final val.
+  - **This is grokking on the EMG dataset.** Flat low plateau → delayed generalization driven by weight-norm
+    compression. Honest caveats: the plateau sits at ~0.35, not chance 0.125 (EMG keeps some smooth-manifold
+    generalization even at high norm), and the rise spans ~20k epochs rather than a vertical cliff — but on a
+    **log-epoch axis** it is the canonical grokking curve, and qualitatively unlike the "smooth drift from
+    step 1" of all 24 prior runs.
+  - **Next, in priority order:**
+    - [ ] **Extend P10b to ~450k epochs** — it was *still rising* at 220k (we cut it off mid-tail). Likely
+      pushes val past 0.62 and shows saturation. Highest priority, cheapest big win (~10.5h; run alone overnight).
+    - [ ] **Multi-seed P10b** (seeds 123, 256, 420, 789) to show the grok is robust (not seed-luck) and to make
+      a clean seed-averaged figure with error bands.
+    - [ ] **Publication figure**: P10b val + weight-norm vs epoch on a **log-x axis** (plateau→rise reads as
+      textbook grokking); `plot_grok_pilot` panel 2 already pairs val with weight norm — add a log-x variant.
+    - [ ] **Sharpen the edge** (optional): even bigger init (×15–20) → longer flatter plateau + more abrupt entry
+      into the zone; and/or Tier 1 rigid features (raw windows / tiny RMS) to push the plateau toward chance.
 
 ### Tier 1 — Make the EMG task rigid (remove the smooth shortcut)
 Attacks condition (1) structurally. Natural follow-up if Tier 0 alone isn't enough — and **combines**
