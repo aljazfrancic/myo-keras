@@ -731,3 +731,37 @@ def plot_grok_logx(result: Dict[str, Any], *, savepath: Optional[str] = None, ti
     if savepath:
         fig.savefig(savepath, bbox_inches="tight")
     return fig
+
+
+def plot_grok_logx_overlay(results, *, savepath: Optional[str] = None, title: Optional[str] = None):
+    """Overlay val accuracy vs epoch (log-x) across several runs (e.g. a multi-seed pass).
+
+    Each run is a thin line labelled by seed; the mean over the shared epoch grid is bold.
+    Shows whether the grok (flat plateau → delayed rise) is robust across seeds/runs, and
+    how wide the run-to-run spread is (see the P11 divergence note in TODO.md).
+    """
+    import matplotlib.pyplot as plt
+
+    minlen = min(len(r["epochs"]) for r in results)
+    x = np.asarray(results[0]["epochs"][:minlen], dtype=float)
+    vals = np.array([np.asarray(r["val_accuracy"][:minlen]) for r in results])
+    fig, ax = plt.subplots(figsize=(9, 5.5), dpi=FIGURE_DPI)
+    for r, v in zip(results, vals):
+        ax.plot(x, v, lw=1.0, alpha=0.5, label=f"seed={r.get('seed')}")
+    ax.plot(x, vals.mean(axis=0), color="k", lw=2.4, label="mean")
+    ax.set_xscale("log")
+    ax.set_xlabel("Epoch (log scale)")
+    ax.set_ylabel("Validation accuracy")
+    ax.set_ylim(0.0, max(0.7, float(vals.max()) + 0.05))
+    ax.grid(True, which="both", alpha=0.25)
+    is_ = results[0].get("init_scale", 1.0)
+    ax.set_title(
+        title or f"Grokking robustness — init×{is_:g}, wd={results[0].get('wd')}, "
+        f"n={results[0].get('train_subset')}, {len(results)} seeds",
+        fontsize=11,
+    )
+    ax.legend(fontsize=9, loc="lower right")
+    fig.tight_layout()
+    if savepath:
+        fig.savefig(savepath, bbox_inches="tight")
+    return fig

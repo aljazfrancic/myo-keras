@@ -70,7 +70,7 @@ GROKKING_PILOT_MULTISEED = [
     {"init_scale": 10.0, "wd": 0.15, "epochs": 150_000, "seed": s}
     for s in (123, 256, 420, 789)
 ]
-GROKKING_PILOT_CONFIGS = GROKKING_PILOT_EXTEND  # <-- ACTIVE next run = extend P10b. Swap to *_MULTISEED (or _P10) as needed.
+GROKKING_PILOT_CONFIGS = GROKKING_PILOT_MULTISEED  # <-- ACTIVE = P12 multi-seed robustness (P11 extend done; saturates ~0.62). Swap to *_EXTEND / *_P10 to reproduce those.
 CURATION_ACCURACY_THRESHOLD = 0.7
 FIGURE_SIZE = (20, 5)
 FIGURE_DPI = 200  # 2× Matplotlib default (100) for sharper display and exports
