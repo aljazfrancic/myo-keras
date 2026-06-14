@@ -11,20 +11,21 @@ algorithmic task — the EMG dataset is the experiment, not a vehicle for it
 > roadmap, the 26 runs done, banked findings, and analysis discipline in one place.
 > Per-run detail otherwise lives in `git log` (master = the 15-run sweep, pilot = pilots P1–P10).
 >
-> **STATUS (2026-06-14) — grokking *dynamics* demonstrated; *outcome* is marginal.** P10b → P11 show the real
-> three-phase signature: flat low-val plateau (≈0.37) → norm-compression-driven delayed rise (corr −0.85) →
-> saturates val ~0.61–0.62 (P11, 450k). Figure: [`pics/p10b_grokking_logx.png`](pics/p10b_grokking_logx.png).
-> **But** a vanilla early-stopped net on the *same clean split* hits ~0.58 by ep ~150, so the grok buys only
-> **+0.04 (within val noise) at 3000× the compute** — the "better classifier" claim is dead. The next action is
-> **not** P12; it's the **ceiling baseline**, which gates everything. **Read ⚖️ Current verdict (below) first.**
+> **STATUS (2026-06-14) — RESOLVED: grokking *dynamics* real; performance program CLOSED.** P10b → P11 show the
+> real three-phase signature (plateau ≈0.37 → norm-compression-driven rise, corr −0.85 → saturate ~0.62; figure
+> [`pics/p10b_grokking_logx.png`](pics/p10b_grokking_logx.png)). But the ceiling baseline settled it: a good model
+> on full data reaches **0.81–0.85 within-subject** (the grok's own protocol) and **0.65 LOSO** — so the grok's
+> **0.62 is the n=100 *sample*-ceiling, not the task ceiling**, and it only ties early stopping (+0.04, noise).
+> **No performance story at any budget.** P12 seeds + 450k ablation **shelved**. Outcome = an honest *phenomenology*
+> blog post (figure + ceiling caveats), not a paper. See **⚖️ Current verdict → ▶▶ RESOLVED**.
 
 ---
 
 ## ⚖️ Current verdict (2026-06-14) — three things are true at once
 
 After auditing the pipeline and running a matched baseline, the honest read is **not** "false before, real now."
-It's: the **dynamics** are real, the **result** sits in the same disappointing neighbourhood it always has, and a
-**ceiling number we don't have yet** decides whether even the modest claim is worth writing.
+It's: the **dynamics** are real, the **result** sits in the same disappointing neighbourhood it always has, and the
+**ceiling number — now measured (see ▶▶ RESOLVED below)** — decides whether even the modest claim is worth writing.
 
 1. **The split is clean.** Train/val/test are separate recording sessions (`-1`/`-2`/`-3`), loaded by independent
    calls, **never concatenated-then-shuffled** ([`myo_utils.py:135`](myo_utils.py#L135)) — the temporal
@@ -62,6 +63,23 @@ Recommended immediate next run**, rewritten to the ceiling baseline):
 **Sequencing:** the ceiling baseline is a normal supervised run (hours, background) — fine now. The **450k init
 ablation** and **14h P12 seeds** are *not* day-one-of-a-busy-week runs — queue them only if the gate sends us down
 the phenomenology path, and after higher-priority work clears.
+
+**▶▶ RESOLVED (2026-06-14, ceiling measured) — performance program CLOSED.** A good model (MLP, z-scored, dropout,
+early stopping) on **full data** (`ceiling_baseline.py`):
+
+| protocol (good model, full data, RMS-30) | accuracy | note |
+|---|---|---|
+| within-subject cross-session — **the grok's own protocol** (480k rows) | **0.81 test / 0.85 val** | grok 0.62 is **0.19 below** this |
+| leave-one-subject-out (cross-subject), 5-fold | **0.65 ± 0.07** | the protocol you'd actually claim |
+| n=100 same-budget early-stop baseline | 0.58 | grok ties it (**+0.04, noise**) |
+
+The naive gate misfires because the ceiling used 480k rows vs the grok's 100. Honest reading: **the grok's 0.62 is
+the n=100 *sample*-ceiling, not the *task* ceiling** — the within-subject task supports 0.85 *with data*. The grok
+isn't *wandering* (it's data-starved by design), but it has **no performance story at any budget** (ties early-stop
+at n=100; 0.19 below full-data). **Verdict: dynamics real, result dead → honest phenomenology blog post (figure +
+these numbers), not a paper.** Expensive runs **shelved**: P12 seeds add nothing without a performance story; the
+450k init ablation is optional-only (config 4 already hints init is load-bearing — init×1 in the same regime hit
+0.58 with no plateau / no delayed rise).
 
 ---
 
@@ -167,6 +185,9 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
 - **Vanilla baseline ≈ 0.58 @ ep ~150** (normal init, same split, early-stopped; then overfits down) → the grok's
   0.62 is **+0.04 at 3000× compute, within noise**. "Better classifier" is dead; chase *phenomenology*, gated on
   the **ceiling** (see **⚖️ Current verdict**).
+- **Ceiling measured (2026-06-14):** good model + full data → **0.81 within-subject** (grok's protocol) / **0.65
+  LOSO**. The grok's 0.62 is the **n=100 sample-ceiling, not the task ceiling** — the task supports 0.85 with data.
+  Performance program closed; see **⚖️ Current verdict → ▶▶ RESOLVED**.
 - **Val noise > naive binomial** — causal RMS emits one row/sample, so adjacent val rows overlap by `n−1` →
   *effective* val N ≪ 8000. The ±0.006 (1σ) in *Analysis discipline* is a floor; trust small edges *less*, not more.
 
@@ -262,16 +283,14 @@ features. Everything previously tried turned knobs that leave the smooth-manifol
       *same* seed (val 0.567 vs 0.608 @ ep 220k) — RNG-context (P10a ran before P10b originally) + FP
       non-determinism over 10⁵ steps in the drift regime. **Robust** = the shape + saturation (~0.61); **not
       reproducible** = exact val-at-epoch (±~0.03). Ceiling ~0.62 is the n=100 information limit, not optimization.
-    - [ ] **Multi-seed P10b (P12)** (seeds 123, 256, 420, 789) — error-band figure, for the **phenomenology claim
-      only**. **GATED:** worth the ~14h *only if* the ceiling gate sends us down the phenomenology path **and**
-      higher-priority work has cleared. It does **not** rescue a "better classifier" claim — seeds confirming
-      +0.04-within-noise just make a non-result robust. Wired (`GROKKING_PILOT_MULTISEED`, ~3.6h/seed at 150k →
-      ~14h) but **no longer "run next"**; the ceiling baseline goes first.
-    - [ ] **init×10 *causal* ablation (the mechanism question)** — is large init **load-bearing** or just an
-      **accelerant**? Run **init×1 at the full P10b regime** (adamw, lr 1e-4, wd 0.15, n=100, full-batch) **all the
-      way to 450k**: if val crawls to ~0.62 anyway → init merely speeds the journey; if it plateaus lower → init is
-      causal. **No baseline config tests this** — the matched-regime baseline (init×1, wd 0.15) is capped at 6k
-      epochs, ~50–100× too short to show a delayed rise. Gated on the ceiling, like P12.
+    - [~] **Multi-seed P10b (P12) — SHELVED (2026-06-14).** The ceiling closed the performance story, so error
+      bars on a no-performance phenomenology curve aren't decision-relevant — confirming +0.04-within-noise just
+      makes a non-result robust. Wired (`GROKKING_PILOT_MULTISEED`, ~14h) if a blog ever wants the band, but **not
+      worth it now**.
+    - [~] **init×10 *causal* ablation — OPTIONAL (low priority).** The one mechanistically-interesting question
+      (is large init **load-bearing** or just an **accelerant**?): init×1 at the full P10b regime → 450k (~10h).
+      But **config 4 already hints the answer** — init×1 in the same regime hit 0.58 with **no plateau, no delayed
+      rise**, so init looks load-bearing for the *shape*. Run only if a writeup needs the airtight version.
     - [x] **Publication figure** — log-x val + weight-norm: [`pics/p10b_grokking_logx.png`](pics/p10b_grokking_logx.png)
       (now the 450k/P11 version). Train→1.0 at ep ~1.8k, flat val plateau ~0.37 to ep ~10k, then the rise tracks
       the norm compression (157→40), saturating ~0.62. See the plain-English reading guide under P10 RESULTS above.
@@ -324,7 +343,12 @@ and stop us from smearing a sharp edge.
 
 ---
 
-## ▶️ Recommended immediate next run — the CEILING baseline (gates everything)
+## ✅ DONE — the CEILING baseline (gate resolved 2026-06-14)
+
+**RESULT:** within-subject **0.81 test / 0.85 val**, LOSO **0.65 ± 0.07** (good model, full data, RMS-30). The
+grok's 0.62 is the **n=100 sample-ceiling, not the task ceiling** → performance program **closed**, phenomenology
+blog post at most. Full reasoning in **⚖️ Current verdict → ▶▶ RESOLVED**. Script: `ceiling_baseline.py`. Original
+spec kept below for reproducibility.
 
 **The one number that flips the interpretation.** What val is *actually achievable* on this 8-class cross-session
 EMG task with a properly-trained model? It separates "partial grok because the problem is **hard**" (ceiling
