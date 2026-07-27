@@ -3,6 +3,9 @@ __pycache__/
 *.pyc
 *.weights.h5
 
+# Script run logs (ceiling_baseline.py, baseline_check.py)
+*.log
+
 # Python environments
 .venv/
 venv/

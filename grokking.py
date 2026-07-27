@@ -1,4 +1,11 @@
-"""Grokking sweep: callback, model build, sweep runner, and matplotlib plot helpers."""
+"""Grokking on EMG: model build, sweep/pilot runners, run summaries, and plot helpers.
+
+Two experiments live here. ``run_grok_sweep`` trains a grid of natural-init models (the negative
+result: delayed-generalization *drift*, no plateau to grok out of). ``run_grok_pilot`` /
+``run_grok_pilots`` train Omnigrok large-init models, which do produce the three-phase grokking
+signature. ``grok_summary`` reduces either to the numbers that decide which of the two happened.
+See README.md for the full write-up.
+"""
 
 from __future__ import annotations
 
@@ -67,6 +74,112 @@ def load_curated_for_grok(rms_window: Optional[int] = None):
     return train_x, train_y, val_x, val_y
 
 
+def _smooth(y: np.ndarray, w: int = 5) -> np.ndarray:
+    """Centered moving average — single-tick Bernoulli spikes are not edges.
+
+    Pads by edge replication: np.convolve's "same" mode zero-pads instead, which drags the first
+    and last w//2 points toward zero and fabricates a rise at the start of every run.
+    """
+    if len(y) < w:
+        return y
+    pad = w // 2
+    return np.convolve(np.pad(y, pad, mode="edge"), np.ones(w) / w, mode="valid")
+
+
+def grok_summary(result: Dict[str, Any], *, rise_window: int = 10_000) -> Dict[str, Any]:
+    """Reduce one run to the numbers that decide whether it groked.
+
+    Follows the measurement discipline the sweep taught us: measure the plateau by its *mean*
+    (not its min, which is a noise spike), exclude the memorization transient from the "biggest
+    rise" search (or the winner is just post-memorization decay), and smooth before declaring an
+    edge. Grokking = low flat plateau, a large delayed rise, and val anti-correlated with ‖w‖.
+    """
+    eps = np.asarray(result["epochs"], dtype=float)
+    tr = np.asarray(result["train_accuracy"], dtype=float)
+    va = np.asarray(result["val_accuracy"], dtype=float)
+    wn = np.asarray(result["weight_norms"], dtype=float)
+    va_s = _smooth(va)
+
+    mem_i = int(np.argmax(tr >= 0.999)) if np.any(tr >= 0.999) else None
+    mem_ep = int(eps[mem_i]) if mem_i is not None else None
+
+    plateau_mean = plateau_std = None
+    if mem_ep:  # the decade of training right after memorization
+        m = (eps >= mem_ep) & (eps <= 5 * mem_ep)
+        if m.sum() >= 3:
+            plateau_mean, plateau_std = float(va[m].mean()), float(va[m].std())
+
+    # Biggest val gain over any rise_window-wide window, past the memorization transient.
+    start = 2 * mem_ep if mem_ep else 0
+    idx = np.flatnonzero(eps >= start)
+    best_rise, rise_from, rise_to = 0.0, None, None
+    if len(idx) >= 2:
+        js = np.clip(np.searchsorted(eps, eps[idx] + rise_window, side="right") - 1, 0, len(eps) - 1)
+        gains = va_s[js] - va_s[idx]
+        k = int(np.argmax(gains))
+        best_rise = float(gains[k])
+        rise_from, rise_to = int(eps[idx[k]]), int(eps[js[k]])
+
+    post = eps >= (mem_ep or 0)
+    corr = float(np.corrcoef(va[post], wn[post])[0, 1]) if post.sum() > 2 else float("nan")
+    peak_i = int(np.argmax(va))
+
+    return {
+        "mem_epoch": mem_ep,
+        "plateau_val": plateau_mean,
+        "plateau_std": plateau_std,
+        "best_rise": best_rise,
+        "rise_from_epoch": rise_from,
+        "rise_to_epoch": rise_to,
+        "corr_val_wnorm": corr,
+        "peak_val": float(va[peak_i]),
+        "peak_epoch": int(eps[peak_i]),
+        "final_val": float(va[-1]),
+        "wnorm_start": float(wn[0]),
+        "wnorm_final": float(wn[-1]),
+        "epochs_run": int(eps[-1]),
+    }
+
+
+def print_grok_summary(result: Dict[str, Any], *, rise_window: int = 10_000) -> Dict[str, Any]:
+    """Print grok_summary as a handful of aligned lines (see also `grok_summary_table`)."""
+    s = grok_summary(result, rise_window=rise_window)
+    fmt = lambda v, p=3: "n/a" if v is None else f"{v:.{p}f}"
+    print(
+        f"  memorized (train→1.0) at epoch {s['mem_epoch']:,}" if s["mem_epoch"]
+        else "  never fully memorized"
+    )
+    print(f"  plateau val        {fmt(s['plateau_val'])} ± {fmt(s['plateau_std'])}")
+    print(f"  largest {rise_window//1000}k-epoch rise  +{s['best_rise']:.3f}"
+          f"  (ep {s['rise_from_epoch']:,} → {s['rise_to_epoch']:,})"
+          if s["rise_from_epoch"] else "  largest rise      n/a")
+    print(f"  corr(val, ‖w‖)     {fmt(s['corr_val_wnorm'])}   "
+          f"‖w‖ {s['wnorm_start']:.0f} → {s['wnorm_final']:.0f}")
+    print(f"  val peak {s['peak_val']:.3f} @ ep {s['peak_epoch']:,}   "
+          f"final {s['final_val']:.3f} @ ep {s['epochs_run']:,}")
+    return s
+
+
+def grok_summary_table(results: List[Dict[str, Any]], labels: Optional[List[str]] = None) -> str:
+    """Markdown table of grok_summary across several runs — the notebook's results block."""
+    labels = labels or [
+        f"init×{r.get('init_scale', 1.0):g} wd={r.get('wd')} seed={r.get('seed')}" for r in results
+    ]
+    head = ("| run | memorized | plateau val | best 10k rise | corr(val,‖w‖) | ‖w‖ start→end | "
+            "peak val | final val |\n|---|---|---|---|---|---|---|---|")
+    rows = []
+    for lbl, r in zip(labels, results):
+        s = grok_summary(r)
+        plateau = "n/a" if s["plateau_val"] is None else f"{s['plateau_val']:.3f} ± {s['plateau_std']:.3f}"
+        mem = "never" if s["mem_epoch"] is None else f"ep {s['mem_epoch']:,}"
+        rows.append(
+            f"| {lbl} | {mem} | {plateau} | +{s['best_rise']:.3f} | "
+            f"{s['corr_val_wnorm']:+.2f} | {s['wnorm_start']:.0f} → {s['wnorm_final']:.0f} | "
+            f"{s['peak_val']:.3f} @ {s['peak_epoch']:,} | {s['final_val']:.3f} |"
+        )
+    return "\n".join([head] + rows)
+
+
 class GrokLoggingCallback(keras.callbacks.Callback):
     """Logs train metrics + periodic validation metrics + weight norm.
 
@@ -81,11 +194,15 @@ class GrokLoggingCallback(keras.callbacks.Callback):
         val_data,
         log_every: int = GROKKING_LOG_EVERY,
         clean_train_data=None,
+        print_every: int = 0,
     ):
         super().__init__()
         self.val_features, self.val_labels = val_data
         self.log_every = log_every
         self.clean_train_data = clean_train_data
+        # Metrics are *recorded* every log_every epochs but only *printed* every print_every
+        # (0 = never). A 450k-epoch run logs ~4500 points; printing them all buries the notebook.
+        self.print_every = print_every
         self.epochs: List[int] = []
         self.train_loss: List[float] = []
         self.train_accuracy: List[float] = []
@@ -113,20 +230,18 @@ class GrokLoggingCallback(keras.callbacks.Callback):
         )
         self.weight_norms.append(float(weight_norm))
 
-        extra = ""
         if self.clean_train_data is not None:
             cf, cl = self.clean_train_data
             cl_loss, cl_acc = self.model.evaluate(cf, cl, verbose=0)
             self.clean_train_loss.append(float(cl_loss))
             self.clean_train_accuracy.append(float(cl_acc))
-            extra = f"  clean_tr_acc={cl_acc:.4f}"
 
-        print(
-            f"Epoch {ep:>6d}  "
-            f"train_acc={logs['accuracy']:.4f}  "
-            f"val_acc={val_acc:.4f}  "
-            f"wnorm={weight_norm:.2f}{extra}"
-        )
+        if self.print_every and (ep % self.print_every == 0 or ep == self.params["epochs"]):
+            print(
+                f"    ep {ep:>7,d}  train {logs['accuracy']:.3f}  "
+                f"val {val_acc:.3f}  ‖w‖ {weight_norm:6.1f}",
+                flush=True,
+            )
 
 
 def build_grok_model(
@@ -239,13 +354,16 @@ def run_grok_sweep(
     for run_idx, (arch, lr, wd, seed) in enumerate(run_specs, start=1):
         arch_t = tuple(arch)
         key = sweep_key(arch, lr, wd, seed)
-        print(f"\n{'='*60}")
-        print(f"  Run {run_idx}/{n_total}  arch={list(arch_t)}  lr={lr:g}  wd={wd}  seed={seed}")
-        print(f"{'='*60}")
+        print(f"Run {run_idx}/{n_total}  arch={list(arch_t)} lr={lr:g} wd={wd} seed={seed} "
+              f"epochs={epochs:,}", flush=True)
 
         tf.random.set_seed(seed)
         grok_model = build_grok_model(arch, lr, wd)
-        grok_cb = GrokLoggingCallback(val_data=(grok_valid, grok_valid_labels), log_every=log_every)
+        grok_cb = GrokLoggingCallback(
+            val_data=(grok_valid, grok_valid_labels),
+            log_every=log_every,
+            print_every=_progress_every(epochs, log_every),
+        )
         t0 = time.perf_counter()
         grok_model.fit(
             grok_train,
@@ -257,7 +375,8 @@ def run_grok_sweep(
         )
         elapsed = time.perf_counter() - t0
         run_timings.append((key, elapsed))
-        print(f"  >>> Run wall time: {format_elapsed(elapsed)}")
+        print(f"  done in {format_elapsed(elapsed)}  "
+              f"val {grok_cb.val_accuracy[-1]:.3f}  ‖w‖ {grok_cb.weight_norms[-1]:.1f}", flush=True)
 
         sweep_results[key] = {
             "arch": arch_t,
@@ -274,16 +393,13 @@ def run_grok_sweep(
         }
 
     sweep_total = time.perf_counter() - t_sweep0
-    print(f"\n{'='*60}")
-    print(f"  Full sweep wall time: {format_elapsed(sweep_total)}")
-    print(f"{'='*60}\n")
-    print("Per-run timings:")
-    for key, sec in run_timings:
-        arch_t, lr, wd, seed = key
-        print(
-            f"  arch={list(arch_t)}  lr={lr:g}  wd={wd}  seed={seed}  ->  {format_elapsed(sec)}"
-        )
+    print(f"\nSweep complete: {n_total} run(s) in {format_elapsed(sweep_total)}")
     return sweep_results, run_timings, sweep_total
+
+
+def _progress_every(epochs: int, log_every: int) -> int:
+    """Print roughly ten progress lines per run, snapped to the logging cadence."""
+    return max(log_every, (epochs // 10 // log_every) * log_every)
 
 
 def iter_grok_overlay_specs(
@@ -325,6 +441,7 @@ def plot_grok_seed_overlay(
     title_fn: Optional[Callable[[Any, float, float], str]] = None,
     seeds=None,
     figsize=(10, 6),
+    savepath: Optional[str] = None,
 ):
     """One figure: overlay one curve per seed for fixed (arch, lr, wd)."""
     import matplotlib.pyplot as plt
@@ -342,6 +459,8 @@ def plot_grok_seed_overlay(
     ax.legend(fontsize=8, title="seed")
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
+    if savepath:
+        fig.savefig(savepath, bbox_inches="tight")
     return fig, ax
 
 
@@ -433,14 +552,13 @@ def run_grok_pilot(
     mixup_alpha: Optional[float] = None,
     init_scale: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Single-run grokking pilot with label noise.
+    """Single grokking training run on a small stratified subsample of the curated data.
 
-    Widens the memorize->generalize gap by flipping a fraction of training
-    labels: the network must memorize noise first, which blocks statistical
-    shortcuts and creates a real plateau to grok out of. Tracks both
-    noisy-label (optimizer target) and clean-label (ground-truth) metrics so
-    the grokking onset is visible as clean-label accuracy lifting off while
-    noisy-label accuracy stays pinned at 1.0.
+    The lever that works on EMG is ``init_scale`` (Omnigrok large-norm init): starting far above
+    the generalizing weight norm forces memorization first with val pinned low, and weight decay
+    then has something to compress *through*. ``label_noise`` and ``mixup_alpha`` are the other
+    levers we tried; both are dead ends here (see README) but stay wired for reproduction. When
+    label noise is on, clean-label metrics are tracked alongside the noisy ones the optimizer sees.
     """
     arch = arch if arch is not None else GROKKING_PILOT_ARCH
     lr = lr if lr is not None else GROKKING_PILOT_LR
@@ -460,7 +578,6 @@ def run_grok_pilot(
     mixup_alpha = mixup_alpha if mixup_alpha is not None else GROKKING_PILOT_MIXUP_ALPHA
     init_scale = init_scale if init_scale is not None else GROKKING_PILOT_INIT_SCALE
 
-    print(f"Loading curated data (rms_window={rms_window})...")
     train_x_full, train_y_full, val_x_full, val_y_full = load_curated_for_grok(rms_window=rms_window)
 
     clean_tr_x, clean_tr_y = subsample_data(
@@ -479,22 +596,11 @@ def run_grok_pilot(
         opt_str = optimizer
     mixup_str = f"mixup(alpha={mixup_alpha})" if use_mixup else "no-mixup"
 
-    print(f"Train: {len(clean_tr_x)} samples, {n_flipped} labels flipped ({label_noise*100:.0f}% noise)")
-    print(f"Val:   {len(v_x)} samples")
-    init_str = f"init={init_scale:g}x" if init_scale != 1.0 else "init=1x"
-    print(f"Config: arch={list(arch)}  opt={opt_str}  lr={lr:g}  wd={wd}  {init_str}  "
-          f"batch={effective_batch_size} ({steps_per_epoch} step{'s' if steps_per_epoch != 1 else ''}/epoch)  "
-          f"{mixup_str}  seed={seed}  epochs={epochs}")
-    if init_scale != 1.0:
-        print(f"Expected shape (Omnigrok large-init): train memorizes fast; val sits at a LOW plateau")
-        print(f"while the weight norm (starts ~{init_scale:g}x natural) compresses under weight decay;")
-        print(f"val should jump sharply as the norm enters the generalizing zone.\n")
-    elif label_noise > 0:
-        print(f"Expected shape: noisy-label train_acc saturates early at ~{1.0-label_noise:.2f}+")
-        print(f"then climbs to 1.00 as the network memorizes noise; val_acc sits flat;")
-        print(f"clean-label train_acc lifts off late as the network groks the true signal.\n")
-    else:
-        print(f"Expected shape: clean-label delayed-generalization drift (no sharp edge expected).\n")
+    noise_str = f"  noise={label_noise:.2f} ({n_flipped} flipped)" if label_noise else ""
+    print(f"arch={list(arch)}  opt={opt_str}  lr={lr:g}  wd={wd}  init×{init_scale:g}  "
+          f"batch={effective_batch_size} ({steps_per_epoch} step{'s' if steps_per_epoch != 1 else ''}/ep)  "
+          f"{mixup_str}  seed={seed}  n={len(clean_tr_x)}/{len(v_x)}  epochs={epochs:,}{noise_str}",
+          flush=True)
 
     tf.random.set_seed(seed)
     if use_mixup:
@@ -516,6 +622,7 @@ def run_grok_pilot(
             val_data=(v_x, v_y_oh),
             log_every=log_every,
             clean_train_data=(clean_tr_x, clean_tr_y_oh),
+            print_every=_progress_every(epochs, log_every),
         )
         t0 = time.perf_counter()
         model.fit(
@@ -533,6 +640,7 @@ def run_grok_pilot(
             val_data=(v_x, v_y),
             log_every=log_every,
             clean_train_data=(clean_tr_x, clean_tr_y),
+            print_every=_progress_every(epochs, log_every),
         )
         t0 = time.perf_counter()
         model.fit(
@@ -545,7 +653,7 @@ def run_grok_pilot(
             shuffle=True,
         )
     elapsed = time.perf_counter() - t0
-    print(f"\nPilot wall time: {format_elapsed(elapsed)}")
+    print(f"  wall time {format_elapsed(elapsed)}", flush=True)
 
     return {
         "arch": tuple(arch),
@@ -588,38 +696,39 @@ def run_grok_pilots(configs=None) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     t0 = time.perf_counter()
     for i, cfg in enumerate(configs, start=1):
-        print(f"\n{'#'*70}")
-        print(f"# PILOT {i}/{n}: {cfg}")
-        print(f"{'#'*70}")
-        results.append(run_grok_pilot(**cfg))
-    print(f"\nAll {n} pilots done. Total wall time: {format_elapsed(time.perf_counter() - t0)}")
+        print(f"\nPilot {i}/{n}", flush=True)
+        r = run_grok_pilot(**cfg)
+        print_grok_summary(r)
+        results.append(r)
+    if n > 1:
+        print(f"\nAll {n} pilots done in {format_elapsed(time.perf_counter() - t0)}")
     return results
 
 
-def plot_grok_pilot(pilot_result: Dict[str, Any]):
-    """Four-panel summary of a label-noise grokking pilot.
+def plot_grok_pilot(pilot_result: Dict[str, Any], *, savepath: Optional[str] = None):
+    """Diagnostic panel set for one grokking pilot (linear x-axis).
 
     Panels:
-      (0) Accuracy — noisy-label train (optimizer target), clean-label train
-          (ground-truth fit), val. The grokking gap is between noisy-label
-          train saturation and clean-label train / val lift-off.
-      (1) Loss — same three series in loss space; clean-label loss is the
-          sharpest early-warning of grokking onset.
-      (2) Val accuracy vs L2 weight norm (dual axis).
-      (3) Clean-minus-noisy train accuracy gap — negative during memorization,
-          climbs toward zero as the network stops fitting the noise. Crossing
-          zero is the unambiguous grokking moment.
+      (0) Accuracy — train and val.
+      (1) Loss — same series in loss space (log y).
+      (2) Val accuracy vs L2 weight norm (dual axis) — the grokking mechanism.
+      (3) Only for label-noise runs: clean-minus-noisy train accuracy. It sits negative while the
+          network memorizes flipped labels and climbs toward zero as it stops fitting the noise.
+          Omitted for clean-label runs, where the clean series is identical to the train series.
     """
     import matplotlib.pyplot as plt
 
     r = pilot_result
     x = r["epochs"]
-    has_clean = len(r["clean_train_accuracy"]) > 0
+    has_clean = r.get("label_noise", 0.0) > 0 and len(r["clean_train_accuracy"]) > 0
+    n_panels = 4 if has_clean else 3
 
-    fig, axes = plt.subplots(1, 4, figsize=(22, 5), dpi=FIGURE_DPI)
-    ax0, ax1, ax2, ax3 = axes
+    fig, axes = plt.subplots(1, n_panels, figsize=(5.5 * n_panels, 5), dpi=FIGURE_DPI)
+    ax0, ax1, ax2 = axes[0], axes[1], axes[2]
+    ax3 = axes[3] if has_clean else None
 
-    ax0.plot(x, r["train_accuracy"], label="train acc (noisy labels)", color="C0", alpha=0.9)
+    ax0.plot(x, r["train_accuracy"],
+             label="train acc (noisy labels)" if has_clean else "train acc", color="C0", alpha=0.9)
     if has_clean:
         ax0.plot(x, r["clean_train_accuracy"], label="train acc (clean labels)", color="C2", alpha=0.9)
     ax0.plot(x, r["val_accuracy"], label="val acc", color="C3", alpha=0.9)
@@ -629,7 +738,8 @@ def plot_grok_pilot(pilot_result: Dict[str, Any]):
     ax0.grid(True, alpha=0.3)
     ax0.legend(fontsize=8, loc="best")
 
-    ax1.plot(x, r["train_loss"], label="train loss (noisy)", color="C0", alpha=0.9)
+    ax1.plot(x, r["train_loss"],
+             label="train loss (noisy)" if has_clean else "train loss", color="C0", alpha=0.9)
     if has_clean:
         ax1.plot(x, r["clean_train_loss"], label="train loss (clean)", color="C2", alpha=0.9)
     ax1.plot(x, r["val_loss"], label="val loss", color="C3", alpha=0.9)
@@ -652,7 +762,7 @@ def plot_grok_pilot(pilot_result: Dict[str, Any]):
     h2, l2 = ax2b.get_legend_handles_labels()
     ax2.legend(h1 + h2, l1 + l2, fontsize=8, loc="best")
 
-    if has_clean:
+    if ax3 is not None:
         gap = np.array(r["clean_train_accuracy"]) - np.array(r["train_accuracy"])
         ax3.plot(x, gap, color="C4", alpha=0.9)
         ax3.axhline(0.0, color="black", linewidth=0.5, linestyle=":")
@@ -660,8 +770,6 @@ def plot_grok_pilot(pilot_result: Dict[str, Any]):
         ax3.set_ylabel("clean_train_acc − noisy_train_acc")
         ax3.set_title("Grokking gap (→ 0 when groked)")
         ax3.grid(True, alpha=0.3)
-    else:
-        ax3.axis("off")
 
     opt_label = r.get("optimizer", "adamw")
     if opt_label == "sgd":
@@ -679,6 +787,8 @@ def plot_grok_pilot(pilot_result: Dict[str, Any]):
         y=1.03,
     )
     plt.tight_layout()
+    if savepath:
+        fig.savefig(savepath, bbox_inches="tight")
     return fig, axes
 
 
@@ -738,7 +848,7 @@ def plot_grok_logx_overlay(results, *, savepath: Optional[str] = None, title: Op
 
     Each run is a thin line labelled by seed; the mean over the shared epoch grid is bold.
     Shows whether the grok (flat plateau → delayed rise) is robust across seeds/runs, and
-    how wide the run-to-run spread is (see the P11 divergence note in TODO.md).
+    how wide the run-to-run spread is (see the reproducibility caveat in README.md).
     """
     import matplotlib.pyplot as plt
 

@@ -4,6 +4,7 @@ import numpy as np
 # Constants (all magic numbers in one place)
 READINGS_DIR = "../myo-readings-dataset/_readings_right_hand/"
 CURATED_FILE = "../myo-readings-dataset/curated.txt"
+PICS_DIR = "pics"  # figures written by the notebook (created on demand)
 NUM_EMG_CHANNELS = 8
 NUM_GESTURES = 8
 NUM_COLUMNS = 9  # 8 channels + 1 label
@@ -14,63 +15,60 @@ LEARNING_RATE = 0.001
 EPOCHS = 20
 PATIENCE = 5
 LAYER_SIZES = [200, 100, 70]
-# Grokking sweep: tune scalars and lists below. The notebook runs one training job per tuple in
-# GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS × GROKKING_SEEDS (any list may have length 1).
-# Stratified train/val subsamples use subsample_data(..., seed=42) unless you change the notebook call site.
+# --- Grokking, part 1: the natural-init sweep (the negative result) -------------------------
+# One training job per tuple in GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS ×
+# GROKKING_SEEDS (any list may have length 1). At the natural Glorot init norm (~16) this regime
+# only ever produces delayed-generalization *drift*: val is already ~0.55 the moment train hits
+# 1.0, so there is no low plateau to grok out of. The values below are the notebook's illustrative
+# pass (18 min measured); the original exploration was wd ∈ {0.09, 0.10, 0.11} × 5 seeds × 100k
+# epochs and reached the same conclusion. Stratified subsamples use subsample_data(..., seed=42).
 GROKKING_RMS_WINDOW = 30
-GROKKING_EPOCHS = 100_000
+GROKKING_EPOCHS = 20_000
 GROKKING_TRAIN_SUBSET = 100
 GROKKING_ARCHITECTURES = [[200, 100, 70]]
 GROKKING_LRS = [3e-4]
-GROKKING_WEIGHT_DECAYS = [0.09, 0.1, 0.11]
-GROKKING_SEEDS = [100, 123, 256, 420, 789]
+GROKKING_WEIGHT_DECAYS = [0.09]
+GROKKING_SEEDS = [100, 123]
 GROKKING_VAL_SUBSET = 8_000
 GROKKING_LOG_EVERY = 100
-# Pilot: single-run grokking experiment. P9 tests the Omnigrok large-norm-INITIALIZATION
-# mechanism — the canonical way to induce grokking on non-algorithmic real data (Liu, Michaud &
-# Tegmark, "Omnigrok", 2022). Rationale: 23 prior runs (15-run sweep + pilots P1-P8) never produced
-# a sharp memorize->generalize edge and never showed a weight-norm compression event — because every
-# run started at the natural Glorot init norm (~16), already at/below the generalizing norm, so weight
-# decay had nothing to compress through. P9 multiplies the initial Dense kernels by INIT_SCALE so the
-# network starts at a LARGE norm (~78 at 5x): a jagged initial function memorizes first with val pinned
-# LOW, then high weight decay compresses the norm down through the generalizing "Goldilocks zone",
-# where val should jump sharply. Clean labels (noise is a proven dead end on smooth-signal EMG); lr
-# lowered to 1e-4 for stability at large init. See TODO.md (Tier 0) for hypothesis + success criterion.
-GROKKING_PILOT_ARCH = [200, 100, 70]  # P9: sweep Run 1 arch
-GROKKING_PILOT_OPTIMIZER = "adamw"  # P9: AdamW — decoupled wd is what drives the norm compression
+# --- Grokking, part 2: the Omnigrok large-init pilot (the result) ---------------------------
+# The lever that finally worked. Every one of the 24 natural-init runs started at the Glorot norm
+# (~16), already at/below the generalizing norm, so weight decay had nothing to compress *through*.
+# Scaling the initial Dense kernels by INIT_SCALE starts the network at a large norm (~157 at 10x):
+# the jagged initial function memorizes first with val pinned LOW, then weight decay compresses the
+# norm down through the generalizing "Goldilocks zone", and val rises as it crosses. This is the
+# canonical mechanism for grokking on non-algorithmic real data (Liu, Michaud & Tegmark, "Omnigrok",
+# 2022). Clean labels — label noise is a proven dead end on smooth-signal EMG. lr lowered from 3e-4
+# to 1e-4 for stability at large init. See README.md ("Grokking on EMG") for the full write-up.
+GROKKING_PILOT_ARCH = [200, 100, 70]
+GROKKING_PILOT_OPTIMIZER = "adamw"  # AdamW — decoupled wd is what drives the norm compression
 GROKKING_PILOT_MOMENTUM = 0.9  # unused for adamw
 GROKKING_PILOT_NESTEROV = True  # unused for adamw
-GROKKING_PILOT_BATCH_SIZE = None  # P9: full-batch (1 step/epoch)
-GROKKING_PILOT_MIXUP_ALPHA = 0.0  # P9: no mixup — isolate the init-scale lever
-GROKKING_PILOT_TRAIN_SUBSET = 100  # P9: n=100 (sweep Run 1)
-GROKKING_PILOT_LABEL_NOISE = 0.0  # P9: clean labels — noise poisons EMG grokking (P1-P3, P2)
-GROKKING_PILOT_INIT_SCALE = 5.0  # P9: KEY LEVER — Glorot kernels x5 (norm ~16 -> ~78); grade 3<->8 if it diverges or never leaves the floor
-GROKKING_PILOT_WD = 0.3  # P9: clean-label high wd (Omnigrok grok window 0.3-1.0) to compress the large init
-GROKKING_PILOT_LR = 1e-4  # P9: lowered from 3e-4 for stability at large init
-GROKKING_PILOT_EPOCHS = 280_000  # P9: ~6h wall at measured 76.6 ms/epoch (log_every=100); covers full norm compression toward the wd-equilibrium (6h epoch-ceiling on this machine ~315k)
-GROKKING_PILOT_SEED = 100  # P9: seed 100
-GROKKING_PILOT_LOG_EVERY = 100  # P9: train-bound at 100 (evals ~11% of wall); ~2800 log pts, calibration curve is smooth. (20 -> eval-heavy, only ~195k epochs fit in 6h)
-GROKKING_PILOT_SUBSAMPLE_SEED = 42  # P9: match sweep Run 1's train subsample exactly
-# Multi-config pilots: run_grok_pilots() runs one full training job per dict in the ACTIVE list below;
-# each dict's keys override the GROKKING_PILOT_* defaults (lr=1e-4, arch, seed, etc. carry over).
-# P10b (init x10, wd=0.15) produced the grokking shape: flat low plateau (val ~0.35) -> delayed rise
-# (+0.17, corr(val,wn)=-0.85) -> val 0.608 and STILL RISING at the 220k cutoff. See TODO Tier 0.
-GROKKING_PILOT_P10 = [  # completed P10a (control) + P10b (grok); kept for reproduction
-    {"init_scale": 5.0,  "wd": 0.12, "epochs": 120_000},  # P10a control — flat hold ~0.576
-    {"init_scale": 10.0, "wd": 0.15, "epochs": 220_000},  # P10b grok
-]
-# P11 (RECOMMENDED next): extend the P10b grok to find the ceiling — it hadn't saturated at 220k.
-# Re-runs from scratch at seed 100 (reproduces the first 220k exactly, then continues). ~10.5h.
-GROKKING_PILOT_EXTEND = [
+GROKKING_PILOT_BATCH_SIZE = None  # full-batch (1 optimizer step per epoch)
+GROKKING_PILOT_MIXUP_ALPHA = 0.0  # no mixup — isolate the init-scale lever
+GROKKING_PILOT_TRAIN_SUBSET = 100  # n=100; small enough to memorize in ~1.8k full-batch steps
+GROKKING_PILOT_LABEL_NOISE = 0.0  # clean labels
+GROKKING_PILOT_INIT_SCALE = 10.0  # KEY LEVER — Glorot kernels ×10 (norm ~16 -> ~157)
+GROKKING_PILOT_WD = 0.15  # tuned so the norm settles *inside* the Goldilocks zone (~40-48), not past it
+GROKKING_PILOT_LR = 1e-4  # lowered from 3e-4 for stability at large init
+GROKKING_PILOT_EPOCHS = 450_000  # 3h28m at ~28 ms/epoch on 12 cores (was ~11h at 77 ms); val saturates ~0.60
+GROKKING_PILOT_SEED = 100
+GROKKING_PILOT_LOG_EVERY = 100  # train-bound here (evals ~11% of wall); ~4500 log points
+GROKKING_PILOT_SUBSAMPLE_SEED = 42  # fixes which 100 training samples are drawn
+# run_grok_pilots() runs one full training job per dict below; each dict's keys override the
+# GROKKING_PILOT_* defaults above. Swap GROKKING_PILOT_CONFIGS to reproduce a different pass.
+GROKKING_PILOT_HEADLINE = [  # the result: plateau 0.37 -> delayed rise -> saturate ~0.60  (~3.5 h)
     {"init_scale": 10.0, "wd": 0.15, "epochs": 450_000, "seed": 100},
 ]
-# P12: multi-seed robustness of the P10b grok (run after P11) — same config, 4 fresh inits.
-# ~3.6h/seed at 150k => ~14h for all four; trim seeds/epochs to fit your window.
-GROKKING_PILOT_MULTISEED = [
+GROKKING_PILOT_INIT_SWEEP = [  # the tuning pass that found it: control vs grok  (~2.5 h)
+    {"init_scale": 5.0,  "wd": 0.12, "epochs": 120_000},  # control — flat hold ~0.576, no edge
+    {"init_scale": 10.0, "wd": 0.15, "epochs": 220_000},  # grok — val 0.608 and still rising
+]
+GROKKING_PILOT_MULTISEED = [  # seed-robustness band; never run (see README, "What we did not do")
     {"init_scale": 10.0, "wd": 0.15, "epochs": 150_000, "seed": s}
     for s in (123, 256, 420, 789)
 ]
-GROKKING_PILOT_CONFIGS = GROKKING_PILOT_MULTISEED  # <-- ACTIVE = P12 multi-seed robustness (P11 extend done; saturates ~0.62). Swap to *_EXTEND / *_P10 to reproduce those.
+GROKKING_PILOT_CONFIGS = GROKKING_PILOT_HEADLINE  # <-- ACTIVE
 CURATION_ACCURACY_THRESHOLD = 0.7
 FIGURE_SIZE = (20, 5)
 FIGURE_DPI = 200  # 2× Matplotlib default (100) for sharper display and exports
@@ -119,7 +117,7 @@ def get_sessions(readings_dir=READINGS_DIR):
     )
 
 
-def get_values(seshes, verbose=True, rms_window=RMS_WINDOW_SIZE):
+def get_values(seshes, verbose=False, rms_window=RMS_WINDOW_SIZE):
     """Load gesture files from *seshes* directories and return RMS matrix."""
     parts = []
     for sesh in seshes:
