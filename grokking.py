@@ -89,10 +89,20 @@ def _smooth(y: np.ndarray, w: int = 5) -> np.ndarray:
 def grok_summary(result: Dict[str, Any], *, rise_window: int = 10_000) -> Dict[str, Any]:
     """Reduce one run to the numbers that decide whether it groked.
 
-    Follows the measurement discipline the sweep taught us: measure the plateau by its *mean*
-    (not its min, which is a noise spike), exclude the memorization transient from the "biggest
-    rise" search (or the winner is just post-memorization decay), and smooth before declaring an
-    edge. Grokking = low flat plateau, a large delayed rise, and val anti-correlated with ‖w‖.
+    Follows three of the five measurement rules the sweep taught us (see README, "Measurement
+    discipline"): measure the plateau by its *mean* (not its min, which is a single-tick Bernoulli
+    spike), exclude the memorization transient from the "biggest rise" search (or the winner is the
+    rebound out of the post-memorization dip rather than a phase transition), and smooth before
+    declaring an edge. Grokking = low flat plateau, a large delayed rise, and val anti-correlated
+    with ‖w‖.
+
+    Two rules it does NOT encode, so read the output with them in mind:
+      * no dip-depth, so plateau-flatness and edge-sharpness still have to be ranked separately;
+      * no noise floor. ``peak_val`` is a RAW single-tick maximum over every logged point — the
+        mirror image of the plateau-min mistake, and it inflates for the same reason. On the 8000
+        row val subsample, adjacent rows overlap by RMS-window-1, so the effective N is ~3000 and
+        1σ ≈ 0.009 at p ≈ 0.6; over ~4500 log points the largest tick sits ~3σ above the band by
+        chance alone. Quote ``final_val`` and the saturation band, not ``peak_val``, as the result.
     """
     eps = np.asarray(result["epochs"], dtype=float)
     tr = np.asarray(result["train_accuracy"], dtype=float)
@@ -464,7 +474,8 @@ def plot_grok_seed_overlay(
     return fig, ax
 
 
-def plot_grok_run_loss_accuracy(sweep_results, arch, lr: float, wd: float, seed: int):
+def plot_grok_run_loss_accuracy(sweep_results, arch, lr: float, wd: float, seed: int,
+                                *, savepath: Optional[str] = None):
     """Two subplots: train vs val loss and accuracy for one run."""
     import matplotlib.pyplot as plt
 
@@ -491,10 +502,13 @@ def plot_grok_run_loss_accuracy(sweep_results, arch, lr: float, wd: float, seed:
         y=1.02,
     )
     plt.tight_layout()
+    if savepath:
+        fig.savefig(savepath, bbox_inches="tight")
     return fig, (ax0, ax1)
 
 
-def plot_grok_run_valacc_weight_norm(sweep_results, arch, lr: float, wd: float, seed: int):
+def plot_grok_run_valacc_weight_norm(sweep_results, arch, lr: float, wd: float, seed: int,
+                                     *, savepath: Optional[str] = None):
     """Dual-axis: validation accuracy and L2 weight norm vs epoch."""
     import matplotlib.pyplot as plt
 
@@ -529,6 +543,8 @@ def plot_grok_run_valacc_weight_norm(sweep_results, arch, lr: float, wd: float, 
     h2, l2 = ax2.get_legend_handles_labels()
     ax1.legend(h1 + h2, l1 + l2, fontsize=9, loc="best")
     plt.tight_layout()
+    if savepath:
+        fig.savefig(savepath, bbox_inches="tight")
     return fig, (ax1, ax2)
 
 

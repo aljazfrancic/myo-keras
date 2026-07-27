@@ -29,11 +29,16 @@ GROKKING_ARCHITECTURES = [[200, 100, 70]]
 GROKKING_LRS = [3e-4]
 GROKKING_WEIGHT_DECAYS = [0.09]
 GROKKING_SEEDS = [100, 123]
+# Stratified, so this is exactly 1000 rows per class: the majority-class floor equals the 0.125
+# uniform-chance line. The FULL val/test splits are ~56% `hibernation`, so plain accuracy there has
+# a 0.56 floor and is NOT comparable to any number measured on this subsample. Compare grok numbers
+# against balanced accuracy on the full splits (see ceiling_baseline.py).
 GROKKING_VAL_SUBSET = 8_000
 GROKKING_LOG_EVERY = 100
 # --- Grokking, part 2: the Omnigrok large-init pilot (the result) ---------------------------
-# The lever that finally worked. Every one of the 24 natural-init runs started at the Glorot norm
-# (~16), already at/below the generalizing norm, so weight decay had nothing to compress *through*.
+# The lever that finally worked. Every one of the 23 natural-init runs (the 15-run sweep plus
+# pilots P1-P8) started at the Glorot norm (~16), already at/below the generalizing norm, so weight
+# decay had nothing to compress *through*.
 # Scaling the initial Dense kernels by INIT_SCALE starts the network at a large norm (~157 at 10x):
 # the jagged initial function memorizes first with val pinned LOW, then weight decay compresses the
 # norm down through the generalizing "Goldilocks zone", and val rises as it crosses. This is the
@@ -46,12 +51,14 @@ GROKKING_PILOT_MOMENTUM = 0.9  # unused for adamw
 GROKKING_PILOT_NESTEROV = True  # unused for adamw
 GROKKING_PILOT_BATCH_SIZE = None  # full-batch (1 optimizer step per epoch)
 GROKKING_PILOT_MIXUP_ALPHA = 0.0  # no mixup — isolate the init-scale lever
-GROKKING_PILOT_TRAIN_SUBSET = 100  # n=100; small enough to memorize in ~1.8k full-batch steps
+GROKKING_PILOT_TRAIN_SUBSET = 100  # n=100; memorized in 2.1k full-batch steps at init×10 (1.4-1.5k at ×1)
 GROKKING_PILOT_LABEL_NOISE = 0.0  # clean labels
 GROKKING_PILOT_INIT_SCALE = 10.0  # KEY LEVER — Glorot kernels ×10 (norm ~16 -> ~157)
 GROKKING_PILOT_WD = 0.15  # tuned so the norm settles *inside* the Goldilocks zone (~40-48), not past it
 GROKKING_PILOT_LR = 1e-4  # lowered from 3e-4 for stability at large init
-GROKKING_PILOT_EPOCHS = 450_000  # 3h28m at ~28 ms/epoch on 12 cores (was ~11h at 77 ms); val saturates ~0.60
+GROKKING_PILOT_EPOCHS = 450_000  # 3h28m measured (~28 ms/epoch, 12 cores, performance governor).
+# P11 ran this exact config on the SAME box in 10h53m (~87 ms/epoch) while throttled/contended --
+# see README "Runtime". Val saturates in a ~0.585-0.61 band, final 0.600.
 GROKKING_PILOT_SEED = 100
 GROKKING_PILOT_LOG_EVERY = 100  # train-bound here (evals ~11% of wall); ~4500 log points
 GROKKING_PILOT_SUBSAMPLE_SEED = 42  # fixes which 100 training samples are drawn

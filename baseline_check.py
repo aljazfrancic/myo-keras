@@ -1,9 +1,16 @@
-"""Scratch baseline: what does a NORMAL-init net get on the exact P10b split?
+"""Matched baseline: what does a NORMAL-init net get on the exact split the grok runs on?
 
-Same pipeline / split / subsample seeds / 8000-sample val as the grok runs
-(run_grok_pilot defaults: train_subset=100 seed=42, val_subset=8000, arch [200,100,70],
-adamw, clean labels). Only init_scale=1.0 (no Omnigrok large init) + sensible fast,
-early-stoppable regimes. Answers: best val a vanilla early-stopped net reaches, and how fast.
+Same pipeline / split / subsample seeds / balanced 8000-sample val as the grok runs
+(run_grok_pilot defaults: train_subset=100 subsample_seed=42, val_subset=8000, seed=100,
+arch [200,100,70], adamw, clean labels). Only init_scale=1.0 (no Omnigrok large init), over a
+few short regimes. Answers: what a vanilla net reaches on this split, and how fast.
+
+Nothing here actually early-stops — ``summarize`` reports max(val_accuracy) over the whole logged
+trajectory, i.e. what a *perfect* early-stopping oracle peeking at the val set would get. That is
+an upper bound, not a realistic early-stopping result. It is the same raw-maximum statistic
+grok_summary reports as ``peak_val``, so the two are directly comparable, but neither should be
+quoted without the noise floor: 1σ ≈ 0.009 on this subsample (effective N ~3000 after RMS-window
+overlap), so differences under ~0.03 are not separable.
 """
 import json
 import numpy as np
@@ -17,14 +24,18 @@ def logline(s):
         f.write(s + "\n")
 
 open(LOG, "w", encoding="utf-8").close()
-logline("CHANCE = 1/8 = 0.125 ; P10b grok endpoint = 0.62 @450k (init10x)")
+logline("CHANCE = 1/8 = 0.125 (balanced 8000-row val subsample) ; "
+        "grok headline run (P11 config, init10x, 450k) = 0.600 final / 0.619 raw peak")
 
 CONFIGS = [
-    {"init_scale": 1.0, "lr": 1e-3, "wd": 0.0,  "epochs": 3000, "log_every": 25},  # pure vanilla + early stop
+    {"init_scale": 1.0, "lr": 1e-3, "wd": 0.0,  "epochs": 3000, "log_every": 25},  # pure vanilla
     {"init_scale": 1.0, "lr": 1e-3, "wd": 1e-2, "epochs": 3000, "log_every": 25},  # light wd
     {"init_scale": 1.0, "lr": 3e-3, "wd": 1e-2, "epochs": 3000, "log_every": 25},  # faster lr
-    {"init_scale": 1.0, "lr": 1e-4, "wd": 0.15, "epochs": 6000, "log_every": 50},  # P10b regime, normal init
+    {"init_scale": 1.0, "lr": 1e-4, "wd": 0.15, "epochs": 6000, "log_every": 50},  # grok regime, normal init
 ]
+# Measured (this machine): the fast lr=1e-3 configs top out at 0.564 / 0.569, both at epoch 175.
+# The grok's own lr/wd at init×1 gets the highest number, 0.5786, but not until epoch 1,450 — so
+# "0.58" and "epoch ~150" come from DIFFERENT runs and must not be quoted as one result.
 
 def summarize(r):
     eps = np.array(r["epochs"]); va = np.array(r["val_accuracy"]); ta = np.array(r["train_accuracy"])
@@ -45,8 +56,9 @@ for cfg in CONFIGS:
     s = summarize(r); rows.append((cfg, s))
     logline("SUMMARY " + json.dumps(s))
 
-logline("\n===== BASELINE TABLE (normal init, same split as P10b) =====")
-logline("chance=0.125   P10b(grok,init10x)=0.62@450k")
+logline("\n===== BASELINE TABLE (normal init, same balanced 8000-row val as the grok) =====")
+logline("chance=0.125   grok(init10x, 450k) = 0.600 final / 0.619 raw peak   "
+        "['best' below is likewise a raw trajectory max, not an early-stopping result]")
 for cfg, s in rows:
     logline("init1x lr={lr:g} wd={wd:g}: best={best:.4f}@ep{eb} | val@~50={v50:.4f} "
             "| val@~500={v500:.4f} | final={fin:.4f}@{fe} | overfit_drop={ov:+.4f} | mem@{mem}".format(
