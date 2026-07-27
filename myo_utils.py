@@ -59,8 +59,9 @@ GROKKING_PILOT_INIT_SCALE = 10.0  # KEY LEVER — Glorot kernels ×10 (norm 15.6
 GROKKING_PILOT_WD = 0.15  # tuned so the norm settles *inside* the Goldilocks zone (~38-48), not past it
 GROKKING_PILOT_LR = 1e-4  # lowered from 3e-4 for stability at large init
 GROKKING_PILOT_EPOCHS = 450_000  # 3h40m measured (~29 ms/epoch, 6c/12t, performance governor).
-# P11 ran this exact config on the SAME box in 10h53m (~87 ms/epoch) while throttled/contended --
-# see README "Runtime". Val saturates in a ~0.55-0.59 band, final 0.583.
+# P11 ran this exact config on the SAME box in 10h53m (~87 ms/epoch), before that governor was
+# enabled and under conditions nobody recorded -- see README "Runtime". Val saturates in a
+# ~0.55-0.59 band, final 0.583.
 GROKKING_PILOT_SEED = 100  # bites only via keras.utils.set_random_seed (README, "Reproducibility")
 # Independent draws of this config have finished between 0.583 and 0.6125 -- a ~0.03 spread, wider
 # than the +0.009 it beats its matched baseline by. The shape is robust; the final value is not.

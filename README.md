@@ -244,9 +244,8 @@ window plotted above**: the post-peak decay eventually bottoms out into a slow u
 ~25–30k quasi-period instead of continuing to rise. In the committed pass you can see the norm
 crest around epoch 15k and turn over — the first quarter-cycle of that oscillation, and nothing
 more. One 100k run (wd=0.10, seed 123) showed a sharper late rise (+0.042 over 10k), but it was a
-*rebound* from a pre-rise dip, not a phase
-transition. Ranking runs by sharpness alone finds that artefact every time; see
-[measurement discipline](#measurement-discipline) below.
+*rebound* from a pre-rise dip, not a phase transition. Ranking runs by sharpness alone finds that
+artefact every time; see [measurement discipline](#measurement-discipline) below.
 
 ## The diagnosis
 
@@ -296,9 +295,9 @@ the three-phase signature:
 2. **Low phase** — train stays at 1.0 while validation stays low, summarised as **0.379 ± 0.006**
    over epochs 1.4k–7.0k. Be precise about what that is: validation is **not flat** there — it
    ramps gently from ~0.37 to ~0.39, and the ±0.006 is the spread of that ramp, not scatter about
-   a level. (A linear ramp spanning 0.02 has std 0.02/√12 ≈ 0.006; the natural-init runs, which
-   *are* flat, sit at ±0.002.) The low phase runs to roughly epoch 10k — about **7× longer** than
-   memorisation took.
+   a level. (A linear ramp spanning 0.02 has std 0.02/√12 ≈ 0.006; natural-init seed 100, which
+   *is* flat, sits at ±0.002 — seed 123's ±0.005 is itself a gentle decay, 0.585 at ep 2k to 0.570
+   at ep 6k.) The low phase runs to roughly epoch 10k — about **7× longer** than memorisation took.
 3. **Grok** — validation climbs **+0.073 in the single steepest 10k-epoch window (ep 12,600 →
    22,600)** and +0.20 in total above the low phase, while train accuracy is already pinned at 1.0,
    saturating in a **~0.55–0.59 band** and finishing at **0.583**.
@@ -366,8 +365,9 @@ window the result rests on — but "train accuracy never changes" is a simplific
 - ❌ **Label noise of any kind** as the gap-maker. P2 and the sweep bracket the comparison: on a
   smooth-signal task, flipped labels create a permanent memorisation floor rather than a
   memorise→generalise gap, and the noisy run showed *less* late movement than the clean ones did.
-  (P2 is not a clean one-variable control — it also differs in wd, n and epoch budget — but the
-  direction was consistent across P1–P6.) Wrong framework for EMG.
+  (P2 is not a clean one-variable control — it also differs in n and epoch budget, though its
+  wd=0.1 is one of the sweep's own three values — but the direction was consistent across P1–P6.)
+  Wrong framework for EMG.
 - ❌ **wd = 0 with mixup** — weight-norm explosion (P5). Treat `wd ≥ 0.01` as non-negotiable.
 - ❌ **mixup α ≥ 4** on an ~80-sample set — over-smooths (P6).
 - ❌ **Shrinking the architecture** to force a plateau — no effect on shape (P7).
@@ -397,8 +397,8 @@ balanced 8000-row subsample so the comparison is like-for-like:
   quick lr=1e-3 configs (0.561, reached at epoch 125). With 1σ ≈ 0.009 on this subsample the
   difference of two runs carries σ ≈ 0.013, making these **0.7σ and 1.7σ on n=1 runs**. Neither is
   separable. Both sides of this comparison are now measured under the seeding fix, so this is the
-  number the project stands on: **the 450k-epoch grok does not beat a
-  950-epoch vanilla net by any margin this measurement can resolve.**
+  number the project stands on: **the 450k-epoch grok does not beat a 950-epoch vanilla net by any
+  margin this measurement can resolve.**
 
   The comparison is deliberately generous to the baseline: it gets a perfect early-stopping oracle
   (`summarize` reports the raw trajectory maximum) while the grok is quoted at its *final* epoch.
@@ -446,9 +446,10 @@ four decimals, and `subsample_data`, which seeds NumPy directly — so the 100-s
 and the 8000-row balanced val subsample have been byte-identical across every run this project ever
 made. Only the network's initial weights varied.
 
-**The notebook was re-run end to end under the fix on 2026-07-27**, and every figure and trajectory
-number quoted here and in the notebook prose comes from that run. Be precise about what "reproducible"
-is doing in that sentence, though:
+**The notebook was re-run end to end under the fix on 2026-07-27**, and every figure here, plus every
+trajectory number this write-up attributes to the committed sweep or headline run, comes from it.
+(The P1–P11 rows and the retired 100k sweep are pre-fix history, labelled as such where they appear.)
+Be precise about what "reproducible" is doing in that sentence, though:
 
 - **Verified by re-execution.** Two things have actually been run twice and agreed. The baseline
   classifier's cell outputs are byte-identical across the pre- and post-fix runs; and
@@ -466,11 +467,10 @@ is doing in that sentence, though:
 pre-fix runs are the best evidence for it. Four independent draws of nominally the same init×10
 configuration exist. The three that ran the full 450k finished at **0.6125** (P11), **0.600** and
 **0.583**, with raw peaks of 0.6206, 0.619 and 0.595; the fourth (P10b) was still rising at 0.608
-when it stopped at 220k. The three-phase shape, the norm
-compression and corr(val, ‖w‖) ≈ −0.85 held across all of them — that is the robust part. The final
-value did **not**: it spans ~0.03, more than 3σ of the 0.009 measurement noise, and far more than the
-+0.009 the run beats its matched baseline by. The dynamics survive a change of draw; the performance
-claim never had room to.
+when it stopped at 220k. The three-phase shape, the norm compression and corr(val, ‖w‖) ≈ −0.85 held
+across all of them — that is the robust part. The final value did **not**: it spans ~0.03, more than
+3σ of the 0.009 measurement noise, and far more than the +0.009 the run beats its matched baseline
+by. The dynamics survive a change of draw; the performance claim never had room to.
 
 ### Measurement discipline
 
