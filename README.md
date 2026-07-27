@@ -266,7 +266,11 @@ at a large norm with a jagged initial function, so it memorises first with valid
 weight decay must then compress the norm down through the generalising "Goldilocks" zone.
 Validation rises as it crosses. This manufactures all three missing conditions at once.
 
-`init_scale` and `wd` are **synergistic** and have to be tuned together:
+`init_scale` and `wd` are **synergistic** and have to be tuned together. P9–P11 below are the
+original tuning runs, every one of them a pre-fix draw — they seeded with `tf.random.set_seed`, so
+their finals are single draws from a ~0.58–0.61 band (see [Reproducibility](#reproducibility)). The
+committed re-run of the P11 configuration lands at 0.583, and that is the number the result section
+below reports:
 
 | Run | Config | Outcome |
 |---|---|---|
@@ -296,7 +300,7 @@ the three-phase signature:
    saturating in a **~0.55–0.59 band** and finishing at **0.583**.
 4. **The mechanism** — the weight norm falls **156 → 42** in mirror image over the rise, with
    **corr(val, ‖w‖) = −0.85**. That correlation is carried almost entirely by the rise itself:
-   between epochs 10k and 45k the norm falls 157 → 83 and validation goes 0.40 → 0.553. After that
+   between epochs 10k and 45k the norm falls 135 → 83 and validation goes 0.40 → 0.553. After that
    the two come apart in both directions. The norm keeps falling to a floor of **~34 near epoch
    190k** while validation sits flat at ~0.56 — compression with no payoff. Then it *rebounds* and
    oscillates in **~38–48** for the last ~250k epochs, and validation quietly adds its final +0.02
@@ -385,10 +389,11 @@ balanced 8000-row subsample so the comparison is like-for-like:
   *exact same* 100-sample split, pipeline and seeds. Its best trajectory point is **0.574, reached
   at epoch 950** using the grok's own lr/wd; the faster lr=1e-3 configs top out at 0.561 and 0.559
   by epoch 125, and lr=3e-3 at 0.551 by epoch 75. So the grok's 0.583 final buys **+0.009 for 474×
-  the compute** against the best matched baseline, or +0.022 for ~3,600× against the fastest. With
-  1σ ≈ 0.009 on this subsample the difference of two runs carries σ ≈ 0.013, making these **0.7σ and
-  1.7σ on n=1 runs**. Neither is separable. Both sides of this comparison are now measured under the
-  seeding fix, so this is the number the project stands on: **the 450k-epoch grok does not beat a
+  the compute** against the best matched baseline, or +0.022 for ~3,600× against the best of the
+  quick lr=1e-3 configs (0.561, reached at epoch 125). With 1σ ≈ 0.009 on this subsample the
+  difference of two runs carries σ ≈ 0.013, making these **0.7σ and 1.7σ on n=1 runs**. Neither is
+  separable. Both sides of this comparison are now measured under the seeding fix, so this is the
+  number the project stands on: **the 450k-epoch grok does not beat a
   950-epoch vanilla net by any margin this measurement can resolve.**
 
   The comparison is deliberately generous to the baseline: it gets a perfect early-stopping oracle

@@ -868,7 +868,7 @@ def plot_grok_logx_overlay(results, *, savepath: Optional[str] = None, title: Op
 
     Each run is a thin line labelled by seed; the mean over the shared epoch grid is bold.
     Shows whether the grok (flat plateau → delayed rise) is robust across seeds/runs, and
-    how wide the run-to-run spread is (see the reproducibility caveat in README.md).
+    how wide the run-to-run spread is (see "Reproducibility" in README.md).
     """
     import matplotlib.pyplot as plt
 

@@ -174,5 +174,5 @@ logline(f"[A] balanced (floor 0.125): test balanced accuracy={A_test_bal:.4f}  |
         f"same model on the grok's balanced 8000-row val subsample={A_grok_val:.4f}")
 logline(f"[B] LOSO cross-subject: test={loso.mean():.4f} +/- {loso.std():.4f}  "
         f"balanced={loso_bal.mean():.4f} +/- {loso_bal.std():.4f}")
-logline("Compare the grok's 0.60/0.62 against the BALANCED numbers, not the full-split accuracy.")
+logline("Compare the grok's 0.583/0.595 against the BALANCED numbers, not the full-split accuracy.")
 logline("DONE")
