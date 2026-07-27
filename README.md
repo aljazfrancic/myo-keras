@@ -268,9 +268,10 @@ Validation rises as it crosses. This manufactures all three missing conditions a
 
 `init_scale` and `wd` are **synergistic** and have to be tuned together. P9–P11 below are the
 original tuning runs, every one of them a pre-fix draw — they seeded with `tf.random.set_seed`, so
-their finals are single draws from a ~0.58–0.61 band (see [Reproducibility](#reproducibility)). The
-committed re-run of the P11 configuration lands at 0.583, and that is the number the result section
-below reports:
+each final is one unseeded draw rather than a reproducible value; for the init×10 configuration the
+four known draws span a ~0.58–0.61 band (see [Reproducibility](#reproducibility)). The committed
+re-run of the P11 configuration lands at 0.583, and that is the number the result section below
+reports:
 
 | Run | Config | Outcome |
 |---|---|---|
@@ -311,7 +312,7 @@ the three-phase signature:
    that validation barely notices.
 
 Read on a **log-epoch axis** it is the canonical grokking curve, and qualitatively unlike the "peak
-in the first few hundred epochs, then decay" of every natural-init run.
+early, then decay" of every natural-init run.
 
 Set against the same-notebook natural-init runs, the contrast is the whole result:
 
@@ -547,7 +548,7 @@ your reference run — regenerating it with `generate_curated()` changes which s
 | Weight decay | `GROKKING_PILOT_WD` | Must be tuned *with* init_scale — sets where the norm equilibrates relative to the Goldilocks zone |
 | Learning rate | `GROKKING_PILOT_LR` | 1e-4; lowered from the sweep's 3e-4 for stability at large init |
 | Epochs | `GROKKING_PILOT_EPOCHS` | No early stopping. Full-batch, so one optimizer step per epoch |
-| Train subset | `GROKKING_TRAIN_SUBSET` | Stratified subsample, n=100 (12–13 per class) |
+| Train subset | `GROKKING_TRAIN_SUBSET` (sweep), `GROKKING_PILOT_TRAIN_SUBSET` (pilots) | Stratified subsample, n=100 (12–13 per class) |
 | Val subset | `GROKKING_VAL_SUBSET` | Stratified, 8000 — exactly 1000 per class, so the floor is 0.125 |
 | Log / eval cadence | `GROKKING_LOG_EVERY`, `GROKKING_PILOT_LOG_EVERY` | Training runs every epoch; metrics are *recorded* at multiples of this and the final epoch |
 | RMS window (grok reload) | `GROKKING_RMS_WINDOW` | 30, for the grokking data load only |
