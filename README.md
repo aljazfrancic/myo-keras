@@ -443,7 +443,9 @@ is doing in that sentence, though:
 
 - **Verified by re-execution.** The baseline classifier and the sweep reproduce exactly — the
   baseline cell's outputs are byte-identical across the pre- and post-fix runs, and the sweep's two
-  seeds now converge on the same 0.542 final instead of splitting.
+  seeds now converge on the same 0.542 final instead of splitting. `baseline_check.py` was also run
+  twice: all four configs reproduced every logged figure to the last digit, including the
+  **0.5736 @ epoch 950** that the matched-baseline comparison above rests on.
 - **Inherited, not demonstrated.** The 450k-epoch headline run is n=1 at 3 h 40 m and has not been
   executed twice. Its reproducibility follows from the same seeding path that the shorter runs
   verify; nobody has watched it reproduce.
