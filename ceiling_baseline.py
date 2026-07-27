@@ -1,7 +1,7 @@
 """Ceiling baseline — what val/test accuracy is *actually achievable* on this 8-class EMG task
 with a properly-trained model? This gates the grokking interpretation: if a good model on the full
 data lands near the grok's number, the grok is near the task ceiling; if it lands far above, the
-grok's ~0.60 is a small-sample ceiling rather than a task ceiling.
+grok's ~0.58 is a small-sample ceiling rather than a task ceiling.
 
 Read the two metrics side by side, because the class distribution decides which one means what:
 the full splits are ~56% `hibernation`, so plain accuracy there has a majority-class floor of 0.56,
@@ -115,7 +115,7 @@ def train_eval(Xtr, ytr, Xva, yva, Xte, yte, tag, epochs=300, patience=25, seed=
     return best_val, te_acc, te_bal, extras
 
 logline("CEILING BASELINE | RMS window=30 | input=8-dim")
-logline("chance=0.125 | grok val (balanced 8000, floor 0.125) = 0.600 final / 0.619 raw peak"
+logline("chance=0.125 | grok val (balanced 8000, floor 0.125) = 0.583 final / 0.595 raw peak"
         " | vanilla net on the same balanced subset = 0.574 (its own trajectory max)")
 
 # ---- (A) within-subject cross-session ----

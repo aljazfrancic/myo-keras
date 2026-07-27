@@ -18,9 +18,9 @@ LAYER_SIZES = [200, 100, 70]
 # --- Grokking, part 1: the natural-init sweep (the negative result) -------------------------
 # One training job per tuple in GROKKING_ARCHITECTURES × GROKKING_LRS × GROKKING_WEIGHT_DECAYS ×
 # GROKKING_SEEDS (any list may have length 1). At the natural Glorot init norm (~16) this regime
-# only ever produces delayed-generalization *drift*: val is already ~0.55 the moment train hits
+# only ever produces delayed-generalization *drift*: val is already 0.54-0.58 the moment train hits
 # 1.0, so there is no low plateau to grok out of. The values below are the notebook's illustrative
-# pass (18 min measured); the original exploration was wd ∈ {0.09, 0.10, 0.11} × 5 seeds × 100k
+# pass (19 min measured); the original exploration was wd ∈ {0.09, 0.10, 0.11} × 5 seeds × 100k
 # epochs and reached the same conclusion. Stratified subsamples use subsample_data(..., seed=42).
 GROKKING_RMS_WINDOW = 30
 GROKKING_EPOCHS = 20_000
@@ -29,9 +29,8 @@ GROKKING_ARCHITECTURES = [[200, 100, 70]]
 GROKKING_LRS = [3e-4]
 GROKKING_WEIGHT_DECAYS = [0.09]
 GROKKING_SEEDS = [100, 123]
-# STALE-AFTER-RERUN: the committed curves carrying these labels predate the 2026-07-27 seeding fix
-# and are two *unseeded* draws, so the 0.549/0.570 gap between them is run-to-run noise. Delete this
-# note once the notebook has been re-run under the fix. See README, "Reproducibility".
+# Both seeds decay to the same 0.542 by epoch 20k despite starting 0.035 apart -- where a run lands
+# in this regime is set by the regime, not the draw. See README, "Reproducibility".
 # Stratified, so this is exactly 1000 rows per class: the majority-class floor equals the 0.125
 # uniform-chance line. The FULL val/test splits are ~56% `hibernation`, so plain accuracy there has
 # a 0.56 floor and is NOT comparable to any number measured on this subsample. Compare grok numbers
@@ -54,24 +53,25 @@ GROKKING_PILOT_MOMENTUM = 0.9  # unused for adamw
 GROKKING_PILOT_NESTEROV = True  # unused for adamw
 GROKKING_PILOT_BATCH_SIZE = None  # full-batch (1 optimizer step per epoch)
 GROKKING_PILOT_MIXUP_ALPHA = 0.0  # no mixup — isolate the init-scale lever
-GROKKING_PILOT_TRAIN_SUBSET = 100  # n=100; memorized in 2.1k full-batch steps at init×10 (1.4-1.5k at ×1)
+GROKKING_PILOT_TRAIN_SUBSET = 100  # n=100; memorized in 1.4k full-batch steps at init×10 (1.3-1.5k at ×1)
 GROKKING_PILOT_LABEL_NOISE = 0.0  # clean labels
 GROKKING_PILOT_INIT_SCALE = 10.0  # KEY LEVER — Glorot kernels ×10 (norm ~16 -> ~157)
-GROKKING_PILOT_WD = 0.15  # tuned so the norm settles *inside* the Goldilocks zone (~40-48), not past it
+GROKKING_PILOT_WD = 0.15  # tuned so the norm settles *inside* the Goldilocks zone (~38-48), not past it
 GROKKING_PILOT_LR = 1e-4  # lowered from 3e-4 for stability at large init
-GROKKING_PILOT_EPOCHS = 450_000  # 3h28m measured (~28 ms/epoch, 6c/12t, performance governor).
+GROKKING_PILOT_EPOCHS = 450_000  # 3h40m measured (~29 ms/epoch, 6c/12t, performance governor).
 # P11 ran this exact config on the SAME box in 10h53m (~87 ms/epoch) while throttled/contended --
-# see README "Runtime". Val saturates in a ~0.585-0.61 band, final 0.600.
+# see README "Runtime". Val saturates in a ~0.55-0.59 band, final 0.583.
 GROKKING_PILOT_SEED = 100  # bites only via keras.utils.set_random_seed (README, "Reproducibility")
-# STALE-AFTER-RERUN: the numbers quoted two lines above are from a pre-fix, effectively unseeded run.
+# Independent draws of this config have finished between 0.583 and 0.6125 -- a ~0.03 spread, wider
+# than the +0.009 it beats its matched baseline by. The shape is robust; the final value is not.
 GROKKING_PILOT_LOG_EVERY = 100  # train-bound here (evals ~11% of wall); ~4500 log points
 GROKKING_PILOT_SUBSAMPLE_SEED = 42  # fixes which 100 training samples are drawn
 # run_grok_pilots() runs one full training job per dict below; each dict's keys override the
 # GROKKING_PILOT_* defaults above. Swap GROKKING_PILOT_CONFIGS to reproduce a different pass.
-GROKKING_PILOT_HEADLINE = [  # the result: plateau 0.37 -> delayed rise -> saturate ~0.60  (~3.5 h)
+GROKKING_PILOT_HEADLINE = [  # the result: plateau 0.38 -> delayed rise -> saturate ~0.58  (~3.7 h)
     {"init_scale": 10.0, "wd": 0.15, "epochs": 450_000, "seed": 100},
 ]
-GROKKING_PILOT_INIT_SWEEP = [  # the tuning pass that found it: control vs grok  (~2.5 h)
+GROKKING_PILOT_INIT_SWEEP = [  # the tuning pass that found it: control vs grok  (~2.8 h)
     {"init_scale": 5.0,  "wd": 0.12, "epochs": 120_000},  # control — flat hold ~0.576, no edge
     {"init_scale": 10.0, "wd": 0.15, "epochs": 220_000},  # grok — val 0.608 and still rising
 ]

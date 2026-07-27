@@ -35,7 +35,7 @@ model re-scored on the balanced subsample. Both are reported below.
 | **Ceiling** — good model, full data ([`ceiling_baseline.py`](ceiling_baseline.py)) | within-subject cross-session | **0.811 test** / 0.856 val | **0.668 test** |
 | **Ceiling** — same model, re-scored on the grok's own balanced 8000-row val subsample | within-subject cross-session, val | — | **0.760** ‡ |
 | **Ceiling** — good model, full data | leave-one-subject-out, 5-fold | 0.650 ± 0.077 test | **0.358 ± 0.173** † |
-| **Grokking run** — 100 training samples, 450k epochs | within-subject cross-session, val | — | **0.600 final** (band 0.585–0.61) |
+| **Grokking run** — 100 training samples, 450k epochs | within-subject cross-session, val | — | **0.583 final** (band 0.55–0.59) |
 | Vanilla net, *same* 100 samples, best point on its trajectory | within-subject cross-session, val | — | 0.574 @ epoch 950 |
 | Chance | | 0.125 | 0.125 |
 
@@ -59,13 +59,11 @@ quote if anyone asks whether this generalises to a new wearer.
 
 ‡ That subsample is drawn from the same `-2` val split the ceiling model early-stops on, so 0.760
 is mildly optimistic. The selection is a max over ≤300 epochs on 479,667 rows, worth ~1e-3, and the
-grok's 0.600 is scored on the identical rows — so the +0.16 gap is not an artefact of it. But the
+grok's 0.583 is scored on the identical rows — so the +0.18 gap is not an artefact of it. But the
 strictly held-out ceiling number is the 0.668 balanced test figure, not this one.
 
-All numbers in this table are reproduced by the current code, except the **Grokking run** row: it
-came from a run made before the 2026-07-27 seeding fix and will not reproduce curve-for-curve until
-the notebook is re-run under it — see [Reproducibility](#reproducibility), which lists everything
-that has to be refreshed when it is. The vanilla-net row *was* re-measured under the fix.
+Every number in this table comes from the current code under the `keras.utils.set_random_seed` fix
+— see [Reproducibility](#reproducibility).
 
 The grokking result is a **dynamics** result, not a performance result. Both facts are in the
 write-up below, in that order.
@@ -88,13 +86,14 @@ alongside this repo:
 Then open [`myo-keras.ipynb`](myo-keras.ipynb) and run cells top to bottom. The first cell installs
 [`requirements.txt`](requirements.txt).
 
-**Runtime:** the committed run took **~3 h 49 m** end to end on a 6-core / 12-thread CPU (i7-9750H)
-— 18 min for the sweep, 3 h 28 m for the 450k-epoch grokking run, ~3 min for the baseline classifier
-and ~5 s to load the data. That works out to **~28 ms per full-batch epoch**.
+**Runtime:** the committed run took **~4 h 02 m** end to end on a 6-core / 12-thread CPU (i7-9750H)
+— 19 m 03 s for the sweep, 3 h 40 m 19 s for the 450k-epoch grokking run, ~3 min for the baseline
+classifier and ~5 s to load the data. That works out to **~29 ms per full-batch epoch** (29.4 on the
+grokking run, 28.6 on the sweep).
 
 Earlier runs on **the same box** were much slower, and it is worth knowing why before you budget.
 P11 ran a configuration byte-identical to the committed one — same 450k epochs, same `log_every`,
-same 8000-row val — in 10 h 53 m, i.e. **87 ms/epoch**, a 3.14× gap. Enabling the CPU `performance`
+same 8000-row val — in 10 h 53 m, i.e. **87 ms/epoch**, a 2.96× gap. Enabling the CPU `performance`
 governor accounts for part of that, but not all: the three earlier measurements of the same code
 came in at 76.6, 83.8 and 87.0 ms/epoch, a 14% spread that hardware cannot produce. The rest is
 thermal throttling or background load. So treat the historical wall times quoted for P8–P11 as
@@ -102,7 +101,8 @@ upper bounds measured under unknown conditions rather than a per-epoch rate — 
 lands near 80 ms/epoch, check your governor and what else is on the CPU before blaming the machine.
 
 To shorten it, set `GROKKING_PILOT_EPOCHS` down in [`myo_utils.py`](myo_utils.py) — memorisation and
-the whole rise are over by 60k epochs.
+the grokking rise are both over by 60k epochs (the last ~0.02 of validation arrives much later, as a
+slow drift after ~230k).
 
 **CPU is faster than GPU here.** The workloads are small dense models with full-batch updates and
 periodic validation, not large batched matmuls, so the CPU TensorFlow stack in `requirements.txt` is
@@ -213,16 +213,21 @@ two-seed, 20k-epoch pass:
 
 | run | memorised | plateau val | best 10k rise | corr(val, ‖w‖) | ‖w‖ start→end | peak val | final val |
 |---|---|---|---|---|---|---|---|
-| natural init, wd=0.09, seed 100 | ep 1,500 | 0.551 ± 0.002 | **+0.001** | −0.36 | 17 → 38 | 0.574 @ **ep 500** | 0.549 |
-| natural init, wd=0.09, seed 123 | ep 1,400 | 0.577 ± 0.002 | **+0.000** | −0.93 | 17 → 37 | 0.594 @ **ep 500** | 0.570 |
+| natural init, wd=0.09, seed 100 | ep 1,500 | 0.542 ± 0.002 | **+0.003** | −0.34 | 17 → 39 | 0.564 @ **ep 400** | 0.542 |
+| natural init, wd=0.09, seed 123 | ep 1,300 | 0.577 ± 0.005 | **+0.000** | −0.89 | 17 → 38 | 0.586 @ **ep 1,800** | 0.542 |
 
-- Validation is already ~0.55 the moment train accuracy hits 1.0. Condition (1) fails outright.
-- The largest rise anywhere after memorisation is **+0.001**. That is not a slope, let alone an edge.
-- **Peak validation occurs at epoch 500** — *before* memorisation completes — and everything after
-  is a slow decay. Early stopping at partial memorisation beats the entire rest of the run. This
-  held at 1.2M epochs too, and is a notable standalone finding about this dataset.
-- The weight norm **grows** 17 → 38 and never compresses, so condition (3) fails and there is no
-  mechanism for a late transition. (The −0.93 correlation on seed 123 is not evidence of one:
+- Validation is already 0.54–0.58 the moment train accuracy hits 1.0. Condition (1) fails outright.
+- The largest rise anywhere after memorisation is **+0.003**. That is not a slope, let alone an edge.
+- **Peak validation lands in the first 10% of the run** — epoch 400 on seed 100, *before*
+  memorisation completes at 1,500, and epoch 1,800 on seed 123, some 500 epochs after it — and
+  everything following it is a slow decay. Early stopping at or near memorisation beats the entire
+  rest of the run. This held at 1.2M epochs too, and is a notable standalone finding about this
+  dataset.
+- The two seeds start 0.035 apart and **converge**: seed 123 decays from 0.586 all the way down to
+  meet seed 100 at the same 0.542 by epoch 20k. Where a run lands here is set by the regime, not by
+  the draw — which is also the clearest evidence in the repo that the seeding now bites.
+- The weight norm **grows** 17 → 38–39 and never compresses, so condition (3) fails and there is no
+  mechanism for a late transition. (The −0.89 correlation on seed 123 is not evidence of one:
   validation drifts gently down while the norm drifts up, which is anti-correlation without a
   transition — the reason `grok_summary` reports correlation *next to* rise rather than on its own.)
 
@@ -234,8 +239,9 @@ Two behaviours quoted below come from the retired 100k-epoch runs and **do not f
 window plotted above**: the post-peak decay eventually bottoms out into a slow upward drift to
 ~0.596 (**+0.041 spread over 70,000 epochs**), and the weight norm starts oscillating with a
 ~25–30k quasi-period instead of continuing to rise. In the committed pass you can see the norm
-just beginning to crest around epoch 16k, and nothing more. One 100k run (wd=0.10, seed 123) showed
-a sharper late rise (+0.042 over 10k), but it was a *rebound* from a pre-rise dip, not a phase
+crest around epoch 15k and turn over — the first quarter-cycle of that oscillation, and nothing
+more. One 100k run (wd=0.10, seed 123) showed a sharper late rise (+0.042 over 10k), but it was a
+*rebound* from a pre-rise dip, not a phase
 transition. Ranking runs by sharpness alone finds that artefact every time; see
 [measurement discipline](#measurement-discipline) below.
 
@@ -273,56 +279,59 @@ Validation rises as it crosses. This manufactures all three missing conditions a
 
 ![grokking on EMG](pics/grokking_logx.png)
 
-The figure above is the committed run — init×10, wd 0.15, seed 100, 450k epochs, 3 h 28 m. It shows
+The figure above is the committed run — init×10, wd 0.15, seed 100, 450k epochs, 3 h 40 m. It shows
 the three-phase signature:
 
-1. **Memorise** — train accuracy hits 1.0 at **epoch 2,100**. Validation starts at **0.134**, which
-   on this balanced subsample is essentially the 0.125 chance line, and rises only to ~0.34. Large
-   init has killed the smooth-manifold shortcut entirely.
-2. **Low phase** — train stays at 1.0 while validation stays low, summarised as **0.369 ± 0.015**
-   over epochs 2.1k–10.5k. Be precise about what that is: validation is **not flat** there — it
-   ramps steadily from ~0.335 to ~0.39, and the ±0.015 is the spread of that ramp, not scatter about
-   a level. (A linear ramp spanning 0.055 has std 0.055/√12 ≈ 0.016; the natural-init runs, which
-   *are* flat, sit at ±0.002.) The low phase runs to roughly epoch 13k — about **5× longer** than
+1. **Memorise** — train accuracy hits 1.0 at **epoch 1,400**. Validation starts at **0.109**, which
+   on this balanced subsample is *below* the 0.125 chance line, and reaches only ~0.37. Large init
+   has killed the smooth-manifold shortcut entirely.
+2. **Low phase** — train stays at 1.0 while validation stays low, summarised as **0.379 ± 0.006**
+   over epochs 1.4k–7.0k. Be precise about what that is: validation is **not flat** there — it
+   ramps gently from ~0.37 to ~0.39, and the ±0.006 is the spread of that ramp, not scatter about
+   a level. (A linear ramp spanning 0.02 has std 0.02/√12 ≈ 0.006; the natural-init runs, which
+   *are* flat, sit at ±0.002.) The low phase runs to roughly epoch 10k — about **7× longer** than
    memorisation took.
-3. **Grok** — validation climbs **+0.090 in the single steepest 10k-epoch window (ep 12,900 →
-   22,900)** and ~+0.25 in total, while train accuracy is already pinned at 1.0, saturating in a
-   **~0.585–0.61 band** and finishing at **0.600**.
-4. **The mechanism** — the weight norm falls **156 → ~41** in mirror image over the rise, with
-   **corr(val, ‖w‖) = −0.87**, then equilibrates and oscillates in **~41–50** for the last ~340k
-   epochs. Generalisation is *driven by* norm compression — but it does not stop when compression
-   does. Validation has saturated at ~0.60 by epoch 45k with ‖w‖ still at **82.9**, and the norm
-   goes on falling to its floor around epoch 110k with no further gain (it even dips to 0.585 at
-   90k while the norm drops 83 → 51). The compression that *matters* is the stretch that overlaps
-   the rise; the rest is the network settling inside a Goldilocks zone wide enough that val is flat
-   across it.
+3. **Grok** — validation climbs **+0.073 in the single steepest 10k-epoch window (ep 12,600 →
+   22,600)** and +0.20 in total above the low phase, while train accuracy is already pinned at 1.0,
+   saturating in a **~0.55–0.59 band** and finishing at **0.583**.
+4. **The mechanism** — the weight norm falls **156 → 42** in mirror image over the rise, with
+   **corr(val, ‖w‖) = −0.85**. That correlation is carried almost entirely by the rise itself:
+   between epochs 10k and 45k the norm falls 157 → 83 and validation goes 0.40 → 0.553. After that
+   the two come apart in both directions. The norm keeps falling to a floor of **~34 near epoch
+   190k** while validation sits flat at ~0.56 — compression with no payoff. Then it *rebounds* and
+   oscillates in **~38–48** for the last ~250k epochs, and validation quietly adds its final +0.02
+   (0.563 at 225k → 0.583 at 450k) while the norm is going back **up**. That last stretch coincides
+   with the onset of the train-loss spikes rather than with any compression, so read it as late
+   optimiser wandering, not as more grokking. The compression that *matters* is the stretch
+   overlapping the rise; the rest is the network moving around inside a Goldilocks zone wide enough
+   that validation barely notices.
 
 Read on a **log-epoch axis** it is the canonical grokking curve, and qualitatively unlike the "peak
-at epoch 500, then decay" of every natural-init run.
+in the first few hundred epochs, then decay" of every natural-init run.
 
 Set against the same-notebook natural-init runs, the contrast is the whole result:
 
 | | plateau val | best 10k rise | corr(val, ‖w‖) | ‖w‖ start→end | final val |
 |---|---|---|---|---|---|
-| natural init (×1), wd 0.09, seed 100 | 0.551 ± 0.002 | +0.001 | −0.36 | 17 → 38 (**grows**) | 0.549 |
-| natural init (×1), wd 0.09, seed 123 | 0.577 ± 0.002 | +0.000 | −0.93 | 17 → 37 (**grows**) | 0.570 |
-| **large init (×10), wd 0.15, seed 100** | **0.369 ± 0.015** | **+0.090** | **−0.87** | **156 → 45 (compresses)** | **0.600** |
+| natural init (×1), wd 0.09, seed 100 | 0.542 ± 0.002 | +0.003 | −0.34 | 17 → 39 (**grows**) | 0.542 |
+| natural init (×1), wd 0.09, seed 123 | 0.577 ± 0.005 | +0.000 | −0.89 | 17 → 38 (**grows**) | 0.542 |
+| **large init (×10), wd 0.15, seed 100** | **0.379 ± 0.006** | **+0.073** | **−0.85** | **156 → 42 (compresses)** | **0.583** |
 
 Note that these two regimes differ in four things, not two: `init_scale` (×1 vs ×10) and `wd` (0.09
 vs 0.15) are the point, but the learning rate (3e-4 vs 1e-4, lowered for stability at large init)
 and the epoch budget (20k vs 450k) differ too. It is a regime contrast, not a one-variable ablation
 — see [what we did not do](#what-we-did-not-do).
 
-**Three honest caveats.** The low phase sits at ~0.37, not the 0.125 chance line — EMG keeps some
-smooth-manifold generalisation even at high norm. The rise spans ~20k epochs rather than a vertical
-cliff. And the "plateau" is a shallow ramp rather than the flat line the algorithmic-task figures
-show. This is *grokking-shaped delayed generalisation on real data*, not the purest
-algorithmic-task version.
+**Three honest caveats.** The run *starts* below chance at 0.109, but the low phase it settles into
+sits at ~0.38, not at the 0.125 line — EMG keeps some smooth-manifold generalisation even at high
+norm. The rise spans ~20k epochs rather than a vertical cliff. And the "plateau" is a shallow ramp
+rather than the flat line the algorithmic-task figures show. This is *grokking-shaped delayed
+generalisation on real data*, not the purest algorithmic-task version.
 
 A fourth, smaller one: train accuracy is not literally constant for 450k epochs. The linear-x panels
-show it dipping to ~0.81 around epoch 310k and ~0.94 near 195k, with recurring train-loss spikes
-after ~140k. Those are late optimiser instabilities long after the rise, and they do not touch the
-12.9k–22.9k window the result rests on — but "train accuracy never changes" is a simplification.
+show a single dip to ~0.95 around epoch 255k, with recurring train-loss spikes from ~220k onward.
+Those are late optimiser instabilities long after the rise, and they do not touch the 12.6k–22.6k
+window the result rests on — but "train accuracy never changes" is a simplification.
 
 ## Everything we tried, and what each one disproved
 
@@ -342,7 +351,7 @@ after ~140k. Those are late optimiser instabilities long after the rise, and the
 | **P9** | **init×5**, wd 0.3, 280k | Norm 78 → 28 monotone; band broken (~0.602); no edge | The mechanism works — but wd=0.3 overshoots the Goldilocks zone |
 | **P10a** | init×5, wd 0.12, 120k | Flat hold 0.576, corr ≈ 0 | Too little decay parks the net above the transition |
 | **P10b** | **init×10, wd 0.15**, 220k | **Plateau 0.35 → +0.17 rise, corr −0.85, val 0.608 still rising** | — this is the result |
-| **P11** | init×10, wd 0.15, **450k** | Saturates: final 0.6125, corr −0.85 | The ~0.60 band is where this configuration lands, not an optimisation failure |
+| **P11** | init×10, wd 0.15, **450k** | Saturates: final 0.6125, corr −0.85 | The ~0.58–0.61 band is where this configuration lands, not an optimisation failure |
 
 ### Levers ruled out
 
@@ -366,22 +375,21 @@ LOSO numbers say that asterisk carries real weight, since cross-subject balanced
 to 0.358 ± 0.173 with one subject at chance. Nothing here claims to transfer to a new wearer.)
 
 **2. The dynamics are real.** Large-init low phase → delayed rise → norm compression from 156 to the
-Goldilocks zone, corr(val, ‖w‖) = −0.87, visibly unlike a baseline that memorises and overfits in a
+Goldilocks zone, corr(val, ‖w‖) = −0.85, visibly unlike a baseline that memorises and overfits in a
 few hundred epochs. The Omnigrok mechanism genuinely fires on real physiological signal.
 
-**3. The payoff is marginal.** Two baselines settle it, and both are scored on the grok's own
+**3. There is no measurable payoff.** Two baselines settle it, and both are scored on the grok's own
 balanced 8000-row subsample so the comparison is like-for-like:
 
 - **Matched baseline** ([`baseline_check.py`](baseline_check.py)) — a vanilla net at init×1 on the
   *exact same* 100-sample split, pipeline and seeds. Its best trajectory point is **0.574, reached
   at epoch 950** using the grok's own lr/wd; the faster lr=1e-3 configs top out at 0.561 and 0.559
-  by epoch 125, and lr=3e-3 at 0.551 by epoch 75. So the grok's 0.600 final buys **+0.026 for 474×
-  the compute** against the best matched baseline, or +0.039 for ~3,600× against the fastest. With
-  1σ ≈ 0.009 on this subsample the difference of two runs carries σ ≈ 0.013, making these **2.0σ and
-  3.1σ on n=1 runs** — the first is not separable, the second is nominally separable but rests on a
-  single run per side, and both are dwarfed by the ceiling gap below. (The baseline figures were
-  re-measured under the seeding fix; the grok's 0.600 was not, so this gap is one of the numbers to
-  recompute after the notebook is re-run.)
+  by epoch 125, and lr=3e-3 at 0.551 by epoch 75. So the grok's 0.583 final buys **+0.009 for 474×
+  the compute** against the best matched baseline, or +0.022 for ~3,600× against the fastest. With
+  1σ ≈ 0.009 on this subsample the difference of two runs carries σ ≈ 0.013, making these **0.7σ and
+  1.7σ on n=1 runs**. Neither is separable. Both sides of this comparison are now measured under the
+  seeding fix, so this is the number the project stands on: **the 450k-epoch grok does not beat a
+  950-epoch vanilla net by any margin this measurement can resolve.**
 
   The comparison is deliberately generous to the baseline: it gets a perfect early-stopping oracle
   (`summarize` reports the raw trajectory maximum) while the grok is quoted at its *final* epoch.
@@ -390,21 +398,21 @@ balanced 8000-row subsample so the comparison is like-for-like:
   That is the natural-init "peak early, then decay" shape again, and the opposite of the grok's.
 - **Ceiling baseline** ([`ceiling_baseline.py`](ceiling_baseline.py)) — a good model on the **full**
   data, re-scored on **the grok's own balanced 8000-row val subsample**, reaches **0.760**. Against
-  the grok's 0.600 that is a gap of **+0.16**, an order of magnitude past the noise floor. So the
-  grok's ~0.60 is the **n=100 *sample* ceiling, not the *task* ceiling**. The network is not
+  the grok's 0.583 that is a gap of **+0.18**, an order of magnitude past the noise floor. So the
+  grok's ~0.58 is the **n=100 *sample* ceiling, not the *task* ceiling**. The network is not
   wandering — it is data-starved by design — but it has no performance story at any budget.
 
   This is the comparison that has to be done carefully, because the obvious version of it is wrong.
-  Quoting the ceiling model's **0.811 test / 0.856 val** against the grok's 0.600 compares a number
+  Quoting the ceiling model's **0.811 test / 0.856 val** against the grok's 0.583 compares a number
   with a 0.564 majority-class floor against one with a 0.125 floor, and proves nothing. On matched
-  balanced metrics the gap is real but smaller: 0.760 vs 0.600 on the same balanced val subsample,
+  balanced metrics the gap is real but smaller: 0.760 vs 0.583 on the same balanced val subsample,
   or 0.668 vs 0.585 comparing balanced test accuracy between the ceiling model and this notebook's
   own full-data baseline.
 
 **The reframe that shrinks the claim:** this is grokking-**the-dynamics**, not
 grokking-**the-outcome**. In canonical grokking the train/val gap *closes* — validation climbs to
-meet train. Here train is 1.0, validation saturates at ~0.60, and the gap narrows from 0.63 at the
-low phase to 0.40 and then **stops**. It never closes.
+meet train. Here train is 1.0, validation saturates at ~0.58, and the gap narrows from 0.62 at the
+low phase to 0.42 and then **stops**. It never closes.
 
 The defensible sentence is: *grokking-flavoured delayed generalisation shows up cleanly on a non-toy
 EMG dataset.* Not: *grokking solved EMG decoding.*
@@ -429,33 +437,26 @@ four decimals, and `subsample_data`, which seeds NumPy directly — so the 100-s
 and the 8000-row balanced val subsample have been byte-identical across every run this project ever
 made. Only the network's initial weights varied.
 
-<!-- STALE-AFTER-RERUN: everything from here to the end of this section describes artefacts
-     produced BEFORE the seeding fix (2026-07-27). Once the notebook has been re-run end to end
-     under the fix and pics/ regenerated, delete this block and re-verify the trajectory numbers
-     it warns about — see the checklist below. -->
+**The notebook was re-run end to end under the fix on 2026-07-27**, and every figure and trajectory
+number quoted here and in the notebook prose comes from that run. Be precise about what "reproducible"
+is doing in that sentence, though:
 
-**⚠ The committed figures and trajectory numbers predate this fix (2026-07-27).** They came from
-runs where the seeding did not bite, so re-running the notebook reproduces the *shape* but not the
-curve, and validation-at-a-given-epoch moves by up to ~±0.03. Specifically:
+- **Verified by re-execution.** The baseline classifier and the sweep reproduce exactly — the
+  baseline cell's outputs are byte-identical across the pre- and post-fix runs, and the sweep's two
+  seeds now converge on the same 0.542 final instead of splitting.
+- **Inherited, not demonstrated.** The 450k-epoch headline run is n=1 at 3 h 40 m and has not been
+  executed twice. Its reproducibility follows from the same seeding path that the shorter runs
+  verify; nobody has watched it reproduce.
 
-- The `seed=100` / `seed=123` sweep curves are two independent unseeded draws, not a seed
-  comparison — their 0.549 vs 0.570 spread is run-to-run noise.
-- Three nominally identical init×10 runs landed at raw peak val 0.6084 (P10b, 220k), 0.6206 (P11,
-  450k) and 0.619 (committed, 450k). They were three different networks, not one configuration
-  behaving erratically. All three peaks sit within ~0.012 and 1σ here is ~0.009, so that spread was
-  always mostly sampling noise; the finals (0.6125 vs 0.600) differ by more.
-- What held **across those three independent draws** — and is therefore the part worth trusting —
-  is the three-phase shape, the norm compression, corr(val, ‖w‖) ≈ −0.85 to −0.87, and saturation
-  in a ~0.58–0.62 band.
-
-**After re-running, update:** the **Grokking run** row in results-at-a-glance and the note under
-that table about which rows reproduce (the `†` and `‡` footnotes are about LOSO and the ceiling, and
-are not affected); the memorisation epoch (2,100); the low-phase mean 0.369 ± 0.015 and its 2.1k–10.5k window; the +0.090
-steepest-window rise and its 12,900 → 22,900 location; the 0.600 final, 0.619 peak and its σ
-multiple; corr(val, ‖w‖) = −0.87; the 156 → ~41 norm path and the ~41–50 equilibration band; the
-train-accuracy dip epochs; the measured wall times and ms/epoch; and the matched-baseline gap
-against [`baseline_check.py`](baseline_check.py). Then delete this block and the matching notes in
-[`myo_utils.py`](myo_utils.py) and the notebook's opening cell.
+**How much a draw is worth here** is the number to keep in mind when reading the result, and the
+pre-fix runs are the best evidence for it. Four independent draws of nominally the same init×10
+configuration exist. The three that ran the full 450k finished at **0.6125** (P11), **0.600** and
+**0.583**, with raw peaks of 0.6206, 0.619 and 0.595; the fourth (P10b) was still rising at 0.608
+when it stopped at 220k. The three-phase shape, the norm
+compression and corr(val, ‖w‖) ≈ −0.85 held across all of them — that is the robust part. The final
+value did **not**: it spans ~0.03, more than 3σ of the 0.009 measurement noise, and far more than the
++0.009 the run beats its matched baseline by. The dynamics survive a change of draw; the performance
+claim never had room to.
 
 ### Measurement discipline
 
@@ -479,17 +480,19 @@ be applied by hand when reading its output.
    subsampling each selected row has **1.67 overlapping neighbours on average** (77% have at least
    one). That is a design effect of ~2.7, so the **effective N is ~3,000 and 1σ ≈ 0.009**. Over
    ~4,500 logged points the largest single tick sits a couple of σ above the band by chance alone —
-   which is what the committed run's `peak val` of 0.619 is: **2.4σ above the 0.585–0.61 band's
-   midpoint**, and only 1σ above its top. `grok_summary` reports `peak_val` as a raw maximum, the
+   which is what the committed run's `peak val` of 0.595 is: **2.8σ above the 0.55–0.59 band's
+   midpoint**, and only 0.6σ above its top. `grok_summary` reports `peak_val` as a raw maximum, the
    mirror image of the plateau-min mistake in (2): quote `final_val` and the band as the result.
    *(Not encoded.)*
 
 ### What we did not do
 
-- **Multi-seed error bands** (4 more seeds, ~4.5 h). Wired as `GROKKING_PILOT_MULTISEED` and never
+- **Multi-seed error bands** (4 more seeds, ~4.8 h). Wired as `GROKKING_PILOT_MULTISEED` and never
   run. Once the ceiling closed the performance story, error bars on a no-performance curve stopped
-  being decision-relevant — it would only make a non-result robust.
-- **The causal init ablation** — init×1 at the full 450k regime, ~3.5 h at 28 ms/epoch. This is the
+  being decision-relevant — it would only make a non-result robust. The four independent draws of
+  this configuration that do exist (see [Reproducibility](#reproducibility)) are a poor substitute,
+  but they already bracket the final at ~0.58–0.61, which is all the band would have been used for.
+- **The causal init ablation** — init×1 at the full 450k regime, ~3.7 h at 29 ms/epoch. This is the
   airtight version of "is large init load-bearing, or just an accelerant?", and it is the gap that
   makes the side-by-side a regime contrast rather than a controlled ablation. `baseline_check.py`
   hints at the answer over a much shorter budget: init×1 at the grok's own lr/wd peaked at 0.574 by
@@ -509,23 +512,23 @@ be applied by hand when reading its output.
 All hyperparameters live in [`myo_utils.py`](myo_utils.py). `GROKKING_PILOT_CONFIGS` selects which
 pilot(s) `run_grok_pilots()` executes:
 
-Costs below are measured at ~28 ms/epoch (6-core / 12-thread CPU, `performance` governor, idle).
+Costs below are measured at ~29 ms/epoch (6-core / 12-thread CPU, `performance` governor, idle).
 Multiply by ~3 if you are throttled or sharing the CPU — that is what the older runs in this repo
 were doing.
 
 | Set it to | What runs | Cost |
 |---|---|---|
-| `GROKKING_PILOT_HEADLINE` *(default)* | init×10, wd 0.15, 450k — the result | ~3.5 h |
-| `GROKKING_PILOT_INIT_SWEEP` | the tuning pass: init×5/wd 0.12 control, then init×10/wd 0.15 | ~2.5 h |
-| `GROKKING_PILOT_MULTISEED` | 4 extra seeds at 150k for an error band | ~4.5 h |
+| `GROKKING_PILOT_HEADLINE` *(default)* | init×10, wd 0.15, 450k — the result | ~3.7 h |
+| `GROKKING_PILOT_INIT_SWEEP` | the tuning pass: init×5/wd 0.12 control, then init×10/wd 0.15 | ~2.8 h |
+| `GROKKING_PILOT_MULTISEED` | 4 extra seeds at 150k for an error band | ~4.8 h |
 
 The natural-init sweep is configured separately by `GROKKING_ARCHITECTURES` × `GROKKING_LRS` ×
 `GROKKING_WEIGHT_DECAYS` × `GROKKING_SEEDS` (any list may have length 1). The notebook ships a
-trimmed two-seed, 20k-epoch pass (18 min measured); the original was wd ∈ {0.09, 0.10, 0.11} ×
+trimmed two-seed, 20k-epoch pass (19 min measured); the original was wd ∈ {0.09, 0.10, 0.11} ×
 5 seeds × 100k epochs and reached the same conclusion.
 
 `run_grok_sweep` calls `keras.utils.set_random_seed(seed)` before each build and prints per-run wall
-time. Use that, not `tf.random.set_seed` — see the reproducibility caveat above.
+time. Use that, not `tf.random.set_seed` — see [Reproducibility](#reproducibility) above.
 For reproducibility across machines, confirm `curated.txt` in the dataset repo has not changed since
 your reference run — regenerating it with `generate_curated()` changes which sessions enter the split.
 

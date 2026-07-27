@@ -25,7 +25,7 @@ def logline(s):
 
 open(LOG, "w", encoding="utf-8").close()
 logline("CHANCE = 1/8 = 0.125 (balanced 8000-row val subsample) ; "
-        "grok headline run (P11 config, init10x, 450k) = 0.600 final / 0.619 raw peak")
+        "grok headline run (P11 config, init10x, 450k) = 0.583 final / 0.595 raw peak")
 
 CONFIGS = [
     {"init_scale": 1.0, "lr": 1e-3, "wd": 0.0,  "epochs": 3000, "log_every": 25},  # pure vanilla
@@ -60,7 +60,7 @@ for cfg in CONFIGS:
     logline("SUMMARY " + json.dumps(s))
 
 logline("\n===== BASELINE TABLE (normal init, same balanced 8000-row val as the grok) =====")
-logline("chance=0.125   grok(init10x, 450k) = 0.600 final / 0.619 raw peak   "
+logline("chance=0.125   grok(init10x, 450k) = 0.583 final / 0.595 raw peak   "
         "['best' below is likewise a raw trajectory max, not an early-stopping result]")
 for cfg, s in rows:
     logline("init1x lr={lr:g} wd={wd:g}: best={best:.4f}@ep{eb} | val@~50={v50:.4f} "
