@@ -33,9 +33,12 @@ CONFIGS = [
     {"init_scale": 1.0, "lr": 3e-3, "wd": 1e-2, "epochs": 3000, "log_every": 25},  # faster lr
     {"init_scale": 1.0, "lr": 1e-4, "wd": 0.15, "epochs": 6000, "log_every": 50},  # grok regime, normal init
 ]
-# Measured (this machine): the fast lr=1e-3 configs top out at 0.564 / 0.569, both at epoch 175.
-# The grok's own lr/wd at init×1 gets the highest number, 0.5786, but not until epoch 1,450 — so
-# "0.58" and "epoch ~150" come from DIFFERENT runs and must not be quoted as one result.
+# Measured (this machine, under the keras.utils.set_random_seed fix — pre-fix runs of this file
+# gave a different answer every time): the fast lr=1e-3 configs top out at 0.5610 / 0.5592, both at
+# epoch 125, and lr=3e-3 at 0.5506 by epoch 75. The grok's own lr/wd at init×1 gets the highest
+# number, 0.5736, but not until epoch 950 — so "0.57" and "epoch ~125" come from DIFFERENT runs and
+# must not be quoted as one result. Note that config peaks at 950 while memorising only at 3,950:
+# its best point is four times BEFORE memorisation, so there is no post-memorisation rise to see.
 
 def summarize(r):
     eps = np.array(r["epochs"]); va = np.array(r["val_accuracy"]); ta = np.array(r["train_accuracy"])

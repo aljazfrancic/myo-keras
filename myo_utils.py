@@ -29,6 +29,9 @@ GROKKING_ARCHITECTURES = [[200, 100, 70]]
 GROKKING_LRS = [3e-4]
 GROKKING_WEIGHT_DECAYS = [0.09]
 GROKKING_SEEDS = [100, 123]
+# STALE-AFTER-RERUN: the committed curves carrying these labels predate the 2026-07-27 seeding fix
+# and are two *unseeded* draws, so the 0.549/0.570 gap between them is run-to-run noise. Delete this
+# note once the notebook has been re-run under the fix. See README, "Reproducibility".
 # Stratified, so this is exactly 1000 rows per class: the majority-class floor equals the 0.125
 # uniform-chance line. The FULL val/test splits are ~56% `hibernation`, so plain accuracy there has
 # a 0.56 floor and is NOT comparable to any number measured on this subsample. Compare grok numbers
@@ -56,10 +59,11 @@ GROKKING_PILOT_LABEL_NOISE = 0.0  # clean labels
 GROKKING_PILOT_INIT_SCALE = 10.0  # KEY LEVER — Glorot kernels ×10 (norm ~16 -> ~157)
 GROKKING_PILOT_WD = 0.15  # tuned so the norm settles *inside* the Goldilocks zone (~40-48), not past it
 GROKKING_PILOT_LR = 1e-4  # lowered from 3e-4 for stability at large init
-GROKKING_PILOT_EPOCHS = 450_000  # 3h28m measured (~28 ms/epoch, 12 cores, performance governor).
+GROKKING_PILOT_EPOCHS = 450_000  # 3h28m measured (~28 ms/epoch, 6c/12t, performance governor).
 # P11 ran this exact config on the SAME box in 10h53m (~87 ms/epoch) while throttled/contended --
 # see README "Runtime". Val saturates in a ~0.585-0.61 band, final 0.600.
-GROKKING_PILOT_SEED = 100
+GROKKING_PILOT_SEED = 100  # bites only via keras.utils.set_random_seed (README, "Reproducibility")
+# STALE-AFTER-RERUN: the numbers quoted two lines above are from a pre-fix, effectively unseeded run.
 GROKKING_PILOT_LOG_EVERY = 100  # train-bound here (evals ~11% of wall); ~4500 log points
 GROKKING_PILOT_SUBSAMPLE_SEED = 42  # fixes which 100 training samples are drawn
 # run_grok_pilots() runs one full training job per dict below; each dict's keys override the

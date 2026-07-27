@@ -101,8 +101,8 @@ def grok_summary(result: Dict[str, Any], *, rise_window: int = 10_000) -> Dict[s
       * no noise floor. ``peak_val`` is a RAW single-tick maximum over every logged point — the
         mirror image of the plateau-min mistake, and it inflates for the same reason. On the 8000
         row val subsample, adjacent rows overlap by RMS-window-1, so the effective N is ~3000 and
-        1σ ≈ 0.009 at p ≈ 0.6; over ~4500 log points the largest tick sits ~3σ above the band by
-        chance alone. Quote ``final_val`` and the saturation band, not ``peak_val``, as the result.
+        1σ ≈ 0.009 at p ≈ 0.6; over ~4500 log points the largest tick sits a couple of σ above the
+        band by chance alone. Quote ``final_val`` and the band, not ``peak_val``, as the result.
     """
     eps = np.asarray(result["epochs"], dtype=float)
     tr = np.asarray(result["train_accuracy"], dtype=float)
@@ -114,7 +114,7 @@ def grok_summary(result: Dict[str, Any], *, rise_window: int = 10_000) -> Dict[s
     mem_ep = int(eps[mem_i]) if mem_i is not None else None
 
     plateau_mean = plateau_std = None
-    if mem_ep:  # the decade of training right after memorization
+    if mem_ep:  # the window from memorization out to 5x the epoch it happened at
         m = (eps >= mem_ep) & (eps <= 5 * mem_ep)
         if m.sum() >= 3:
             plateau_mean, plateau_std = float(va[m].mean()), float(va[m].std())
@@ -274,8 +274,9 @@ def build_grok_model(
         # Omnigrok large-norm init: scale each Dense kernel (not the zero-init bias) so the
         # network starts far OUTSIDE the generalizing weight-norm "Goldilocks zone" and must
         # compress into it under weight decay — the mechanism that produces a sharp memorize->
-        # generalize transition on non-algorithmic data. Glorot init is seeded upstream
-        # (tf.random.set_seed before this call), so this scaling is deterministic.
+        # generalize transition on non-algorithmic data. Determinism depends on the caller having
+        # run keras.utils.set_random_seed(seed) first: tf.random.set_seed alone does NOT seed
+        # Keras 3 initializers, and three calls under it produce three different Glorot draws.
         for lyr in model.layers:
             w = lyr.get_weights()
             if w:  # Dense -> [kernel, bias]; Input has no weights -> []
@@ -367,7 +368,10 @@ def run_grok_sweep(
         print(f"Run {run_idx}/{n_total}  arch={list(arch_t)} lr={lr:g} wd={wd} seed={seed} "
               f"epochs={epochs:,}", flush=True)
 
-        tf.random.set_seed(seed)
+        # Seeds Python/NumPy/TF *and* Keras 3's initializer state. tf.random.set_seed alone does
+        # not touch the last one, which leaves runs drawing a fresh Glorot init while looking
+        # seeded — see README, "Reproducibility", for the measurements.
+        keras.utils.set_random_seed(seed)
         grok_model = build_grok_model(arch, lr, wd)
         grok_cb = GrokLoggingCallback(
             val_data=(grok_valid, grok_valid_labels),
@@ -618,7 +622,7 @@ def run_grok_pilot(
           f"{mixup_str}  seed={seed}  n={len(clean_tr_x)}/{len(v_x)}  epochs={epochs:,}{noise_str}",
           flush=True)
 
-    tf.random.set_seed(seed)
+    keras.utils.set_random_seed(seed)  # not tf.random.set_seed — see run_grok_sweep
     if use_mixup:
         # one-hot path: categorical loss, mixup tf.data pipeline. Convert val and clean_tr
         # labels to one-hot so the callback's model.evaluate calls match the loss format.

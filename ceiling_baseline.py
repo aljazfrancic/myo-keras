@@ -1,7 +1,7 @@
 """Ceiling baseline — what val/test accuracy is *actually achievable* on this 8-class EMG task
 with a properly-trained model? This gates the grokking interpretation: if a good model on the full
 data lands near the grok's number, the grok is near the task ceiling; if it lands far above, the
-grok's ~0.61 is a small-sample ceiling rather than a task ceiling.
+grok's ~0.60 is a small-sample ceiling rather than a task ceiling.
 
 Read the two metrics side by side, because the class distribution decides which one means what:
 the full splits are ~56% `hibernation`, so plain accuracy there has a majority-class floor of 0.56,
@@ -9,7 +9,9 @@ not 0.125. The grok is scored on a class-BALANCED 8000-row val subsample (1000/c
 so plain accuracy on the full splits is NOT comparable to it. Two like-for-like numbers are
 reported alongside it:
   * balanced accuracy (macro recall) on the full splits, and
-  * accuracy on the grok's own balanced 8000-row val subsample.
+  * accuracy on the grok's own balanced 8000-row val subsample. Note this subsample is drawn from
+    the SAME -2 split protocol (A) early-stops on, so it is mildly optimistic (~1e-3: a max over
+    <=300 epochs on 479,667 rows). The strictly held-out ceiling is the balanced TEST number.
 
 Two protocols, curated 5 participants, RMS window 30 (same features the grok saw; input is 8-dim):
   (A) within-subject cross-session: train -1, early-stop on -2 (val), report best-val(-2) and held-out test(-3)
@@ -114,7 +116,7 @@ def train_eval(Xtr, ytr, Xva, yva, Xte, yte, tag, epochs=300, patience=25, seed=
 
 logline("CEILING BASELINE | RMS window=30 | input=8-dim")
 logline("chance=0.125 | grok val (balanced 8000, floor 0.125) = 0.600 final / 0.619 raw peak"
-        " | vanilla net on the same balanced subset = 0.579 (its own trajectory max)")
+        " | vanilla net on the same balanced subset = 0.574 (its own trajectory max)")
 
 # ---- (A) within-subject cross-session ----
 logline("\n[A] WITHIN-SUBJECT CROSS-SESSION  (train -1, val -2, test -3) -----------------------")
