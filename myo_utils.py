@@ -41,7 +41,7 @@ GROKKING_LOG_EVERY = 100
 # The lever that finally worked. Every one of the 23 natural-init runs (the 15-run sweep plus
 # pilots P1-P8) started at the Glorot norm (~16), already at/below the generalizing norm, so weight
 # decay had nothing to compress *through*.
-# Scaling the initial Dense kernels by INIT_SCALE starts the network at a large norm (~157 at 10x):
+# Scaling the initial Dense kernels by INIT_SCALE starts the network at a large norm (~156 at 10x):
 # the jagged initial function memorizes first with val pinned LOW, then weight decay compresses the
 # norm down through the generalizing "Goldilocks zone", and val rises as it crosses. This is the
 # canonical mechanism for grokking on non-algorithmic real data (Liu, Michaud & Tegmark, "Omnigrok",
@@ -55,7 +55,7 @@ GROKKING_PILOT_BATCH_SIZE = None  # full-batch (1 optimizer step per epoch)
 GROKKING_PILOT_MIXUP_ALPHA = 0.0  # no mixup — isolate the init-scale lever
 GROKKING_PILOT_TRAIN_SUBSET = 100  # n=100; memorized in 1.4k full-batch steps at init×10 (1.3-1.5k at ×1)
 GROKKING_PILOT_LABEL_NOISE = 0.0  # clean labels
-GROKKING_PILOT_INIT_SCALE = 10.0  # KEY LEVER — Glorot kernels ×10 (norm ~16 -> ~157)
+GROKKING_PILOT_INIT_SCALE = 10.0  # KEY LEVER — Glorot kernels ×10 (norm 15.6 -> 156)
 GROKKING_PILOT_WD = 0.15  # tuned so the norm settles *inside* the Goldilocks zone (~38-48), not past it
 GROKKING_PILOT_LR = 1e-4  # lowered from 3e-4 for stability at large init
 GROKKING_PILOT_EPOCHS = 450_000  # 3h40m measured (~29 ms/epoch, 6c/12t, performance governor).

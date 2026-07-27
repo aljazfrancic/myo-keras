@@ -221,11 +221,14 @@ two-seed, 20k-epoch pass:
 - **Peak validation lands in the first 10% of the run** — epoch 400 on seed 100, *before*
   memorisation completes at 1,500, and epoch 1,800 on seed 123, some 500 epochs after it — and
   everything following it is a slow decay. Early stopping at or near memorisation beats the entire
-  rest of the run. This held at 1.2M epochs too, and is a notable standalone finding about this
-  dataset.
+  rest of the run. It still does at 1.2M epochs, though not literally: P8's late drift eventually
+  edged **+0.006** past its epoch-400 peak (0.5901 @ 548k vs 0.5845 @ 400), which is below the 0.009
+  1σ noise floor on this subsample and so not a gain this measurement can resolve. Either way it is
+  a notable standalone finding about this dataset.
 - The two seeds start 0.035 apart and **converge**: seed 123 decays from 0.586 all the way down to
   meet seed 100 at the same 0.542 by epoch 20k. Where a run lands here is set by the regime, not by
-  the draw — which is also the clearest evidence in the repo that the seeding now bites.
+  the draw — the sharpest contrast with the large-init regime, where four draws of one configuration
+  span ~0.03 (see [Reproducibility](#reproducibility)).
 - The weight norm **grows** 17 → 38–39 and never compresses, so condition (3) fails and there is no
   mechanism for a late transition. (The −0.89 correlation on seed 123 is not evidence of one:
   validation drifts gently down while the norm drifts up, which is anti-correlation without a
@@ -447,11 +450,14 @@ made. Only the network's initial weights varied.
 number quoted here and in the notebook prose comes from that run. Be precise about what "reproducible"
 is doing in that sentence, though:
 
-- **Verified by re-execution.** The baseline classifier and the sweep reproduce exactly — the
-  baseline cell's outputs are byte-identical across the pre- and post-fix runs, and the sweep's two
-  seeds now converge on the same 0.542 final instead of splitting. `baseline_check.py` was also run
-  twice: all four configs reproduced every logged figure to the last digit, including the
-  **0.5736 @ epoch 950** that the matched-baseline comparison above rests on.
+- **Verified by re-execution.** Two things have actually been run twice and agreed. The baseline
+  classifier's cell outputs are byte-identical across the pre- and post-fix runs; and
+  `baseline_check.py` was run twice, all four configs reproducing every logged figure to the last
+  digit, including the **0.5736 @ epoch 950** that the matched-baseline comparison above rests on.
+- **Draw-independent, but executed once.** The sweep has been run only once under the fix. Its
+  result is nonetheless not at the mercy of the draw: its two seeds converge on the same 0.542 final
+  instead of splitting, so the number a repeat would land on is fixed by the regime. That is an
+  argument, not a demonstration.
 - **Inherited, not demonstrated.** The 450k-epoch headline run is n=1 at 3 h 40 m and has not been
   executed twice. Its reproducibility follows from the same seeding path that the shorter runs
   verify; nobody has watched it reproduce.
@@ -544,7 +550,7 @@ your reference run — regenerating it with `generate_curated()` changes which s
 
 | What | Constant | Role |
 |---|---|---|
-| Initial weight scale | `GROKKING_PILOT_INIT_SCALE` | **The lever.** Multiplies Dense kernels (not biases) after build. ×10 → starting norm ~157 |
+| Initial weight scale | `GROKKING_PILOT_INIT_SCALE` | **The lever.** Multiplies Dense kernels (not biases) after build. ×10 → starting norm ~156 |
 | Weight decay | `GROKKING_PILOT_WD` | Must be tuned *with* init_scale — sets where the norm equilibrates relative to the Goldilocks zone |
 | Learning rate | `GROKKING_PILOT_LR` | 1e-4; lowered from the sweep's 3e-4 for stability at large init |
 | Epochs | `GROKKING_PILOT_EPOCHS` | No early stopping. Full-batch, so one optimizer step per epoch |
