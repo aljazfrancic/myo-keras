@@ -1,0 +1,16 @@
+# Dependencies for myo-torch.ipynb (the PyTorch / PyTorch Lightning port of the baseline).
+# TensorFlow is not needed here; myo-keras.ipynb keeps its own requirements.txt.
+#
+# CPU wheels on purpose: the default PyPI `torch` drags in ~2.5 GB of CUDA libraries, and this
+# workload — a 29,538-parameter MLP on 32-row batches — is faster on CPU anyway. The PyTorch CPU
+# index is primary; PyPI supplies everything else. `torch==X+cpu` sorts above plain `torch==X`
+# under PEP 440, so the CPU build wins the resolution.
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+
+torch
+lightning
+torchinfo
+numpy
+matplotlib
+scikit-learn

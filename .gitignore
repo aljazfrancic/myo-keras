@@ -3,6 +3,11 @@ __pycache__/
 *.pyc
 *.weights.h5
 
+# Checkpoints written by myo-torch.ipynb
+*.pt
+checkpoints_lightning/
+lightning_logs/
+
 # Script run logs (ceiling_baseline.py, baseline_check.py)
 *.log
 
